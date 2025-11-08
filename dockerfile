@@ -1,22 +1,15 @@
-# Base image
+# Use a minimal Python image
 FROM python:3.11-slim
 
-# Set working directory
+# Set working directory in container
 WORKDIR /app
 
-# Copy dependencies and script
-COPY requirements.txt .
-COPY ai_script.py .
+# Copy all files from your repo to the container
+COPY . .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Set environment variables (override in Coolify)
-ENV OPENAI_API_KEY=""
-ENV WP_URL=""
-ENV WP_USER=""
-ENV WP_APP_PASSWORD=""
-
-# Command to run the script
-
+# Run the Python script when the container starts
 CMD ["python", "ai_script.py"]
+
