@@ -18,4 +18,5 @@ ENV WP_USER=""
 ENV WP_APP_PASSWORD=""
 
 # Command to run the script
+
 CMD ["python", "ai_script.py"]
