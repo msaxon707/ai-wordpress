@@ -12,3 +12,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Run the AI WordPress script
 CMD ["python", "ai_script.py"]
+
