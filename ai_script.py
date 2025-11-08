@@ -1,55 +1,65 @@
-import os
-import openai
+import osimport os
 import requests
 from requests.auth import HTTPBasicAuth
-from datetime import datetime
+import openai
+from openai.error import RateLimitError, APIError
 
-# Environment variables
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-WP_URL = os.getenv("WP_URL")
-WP_USERNAME = os.getenv("WP_USERNAME")
-WP_PASSWORD = os.getenv("WP_PASSWORD")
+# Load environment variables
+WP_URL = os.getenv("WP_URL", "https://thesaxonbelong.com/wp-json/wp/v2/posts")
+WP_USERNAME = os.getenv("WP_USERNAME", "megansaxon9@gmail.com")
+WP_PASSWORD = os.getenv("WP_PASSWORD", "Brayden2012$")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
-# New API client
-client = openai.OpenAI(api_key=OPENAI_API_KEY)
-
-prompts = [
-    "Write a short SEO-friendly blog post about deer hunting for a family-friendly outdoors blog.",
-    "Write a blog post about the best deer hunting gear for beginners.",
-    "Write a blog post with tips for tracking deer in the wild.",
-    "Write a blog post about safety tips during deer hunting season.",
-    "Write a blog post about the best deer hunting locations in the United States."
-]
+openai.api_key = OPENAI_API_KEY
 
 def generate_content(prompt):
-    response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=[
-            {"role": "system", "content": "You are a helpful AI content writer."},
-            {"role": "user", "content": prompt}
-        ],
-        max_tokens=500
-    )
-    return response.choices[0].message.content.strip()
+    """
+    Attempts to generate content using OpenAI Chat API.
+    If quota is exceeded or API fails, raises the exception.
+    """
+    try:
+        response = openai.chat.completions.create(
+            model="gpt-4",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            max_tokens=300
+        )
+        return response.choices[0].message.content.strip()
+    except RateLimitError:
+        print("OpenAI quota exceeded. Falling back to placeholder content.")
+        raise
+    except APIError as e:
+        print(f"OpenAI API error: {e}. Using placeholder content.")
+        raise
 
-def post_to_wordpress(title, content):
-    post_data = {
+def post_to_wordpress(title, content, status="draft"):
+    """
+    Posts a draft to WordPress.
+    """
+    payload = {
         "title": title,
         "content": content,
-        "status": "draft"
+        "status": status
     }
     response = requests.post(
         WP_URL,
-        json=post_data,
+        json=payload,
         auth=HTTPBasicAuth(WP_USERNAME, WP_PASSWORD)
     )
-    if response.status_code in [200, 201]:
-        print(f"Post '{title}' created successfully!")
+    if response.status_code == 201:
+        print(f"Draft successfully created! Post ID: {response.json().get('id')}")
     else:
-        print(f"Failed to create post '{title}': {response.text}")
+        print(f"Failed to create draft. Status code: {response.status_code}")
+        print("Response:", response.text)
 
-for i, prompt in enumerate(prompts, start=1):
-    title = f"Deer Hunting Post {i} - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-    content = generate_content(prompt)
-    post_to_wordpress(title, content)
+if __name__ == "__main__":
+    prompt = "Write a short blog post about deer hunting tips."
+    
+    try:
+        content = generate_content(prompt)
+    except Exception:
+        # Fallback content if OpenAI fails
+        content = "This is a placeholder draft post about deer hunting. OpenAI API quota exceeded or API error occurred."
+
+    post_to_wordpress("Deer Hunting Tips", content)
 
