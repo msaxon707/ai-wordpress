@@ -47,5 +47,25 @@ def generate_content(prompt):
 # -------------------------
 def post_to_wordpress(title, content):
     post_data = {
-        "
+        "title": title,
+        "content": content,
+        "status": "draft"  # Change to "publish" to go live automatically
+    }
+    response = requests.post(
+        WP_URL,
+        json=post_data,
+        auth=HTTPBasicAuth(WP_USERNAME, WP_PASSWORD)
+    )
+    if response.status_code in [200, 201]:
+        print(f"Post '{title}' created successfully!")
+    else:
+        print(f"Failed to create post '{title}': {response.text}")
+
+# -------------------------
+# Main loop to create posts
+# -------------------------
+for i, prompt in enumerate(prompts, start=1):
+    title = f"Deer Hunting Post {i} - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+    content = generate_content(prompt)
+    post_to_wordpress(title, content)
 
