@@ -351,19 +351,35 @@ def rewrite_post_content(post: dict) -> str | None:
     combined_text = f"{title}\n{original_html}"
     category = detect_category(combined_text)
 
+    # External link sources by category
+    external_sources = {
+        "hunting": ["https://www.outdoorlife.com/hunting/", "https://www.fieldandstream.com/hunting/"],
+        "fishing": ["https://www.outdoorlife.com/fishing/", "https://www.fieldandstream.com/fishing/"],
+        "dogs": ["https://www.akc.org/expert-advice/training/", "https://www.ukcdogs.com/hunting-dog-articles"],
+        "recipes": ["https://www.themeateater.com/cook", "https://www.allrecipes.com/"],
+        "survival-bushcraft": ["https://bushcraftusa.com/", "https://www.rei.com/learn/c/survival"],
+        "outdoor living": ["https://www.outsideonline.com/", "https://www.backpacker.com/"],
+        "deer season": ["https://www.outdoorlife.com/deer-hunting/", "https://www.nrahlf.org/articles/deer-hunting/"],
+    }
+    externals = external_sources.get(category, external_sources["hunting"])
+
     prompt = f"""
 You are rewriting an existing WordPress blog post for The Saxon Blog.
 
-Goals:
-- Keep the same main topic and intent as the original.
-- Improve readability, heading structure (H2/H3), and SEO.
-- Keep it AdSense-safe.
-- Include at least one internal link to The Saxon Blog (e.g. {SITE_BASE}/deer-hunting-tips/ or similar).
-- Include at least one external link to a credible outdoor/recipe/training source relevant to the topic.
-- Add a short concluding call-to-action inviting readers to explore more on The Saxon Blog.
+Original post title: "{title}"
+Category: {category}
 
-Return ONLY the full HTML content to be stored directly in WordPress (no explanations outside the HTML).
+Rewrite it in clear, SEO-optimized HTML that:
+- Keeps the same topic but improves readability and structure.
+- Uses <h2> and <h3> headings.
+- Adds at least one internal HTML link to The Saxon Blog (like <a href="{SITE_BASE}/deer-hunting-tips/">The Saxon Blog</a>)
+- Adds at least one external HTML link from these sources: {externals}
+- Avoids Markdown; use <a href=""> format only.
+- Uses short paragraphs (2–4 sentences each).
+- Keeps it AdSense-safe and natural.
+- Ends with a friendly call to action for readers to explore more on The Saxon Blog.
 
+Do not explain anything — return only full HTML for the updated post.
 Original HTML content:
 {original_html}
 """
@@ -372,28 +388,28 @@ Original HTML content:
         resp = client.chat.completions.create(
             model=MODEL,
             messages=[
-                {"role": "system", "content": "You are an expert SEO editor for outdoor blogs."},
+                {"role": "system", "content": "You are an expert SEO editor for outdoor blogs who formats clean HTML."},
                 {"role": "user", "content": prompt},
             ],
             temperature=0.6,
             max_tokens=1100,
         )
-        return resp.choices[0].message.content
+        new_html = resp.choices[0].message.content
+
+        # Force Markdown-to-HTML conversion
+        new_html = new_html.replace("[", "<a href=\"").replace("](", "\">").replace(")", "</a>")
+
+        # Ensure at least one link exists
+        if "href=" not in new_html:
+            fallback = random.choice(externals)
+            new_html += f'<p>Learn more from <a href="{fallback}" target="_blank">trusted sources</a>.</p>'
+
+        return new_html
     except Exception as e:
         print("⚠️ OpenAI error (rewrite):", e)
         log_event(f"OpenAI error (rewrite): {e}")
         return None
 
-def update_existing_post(post_id: int, new_html: str) -> None:
-    post_url = WP_URL.rstrip("/") + f"/{post_id}"
-    data = {"content": new_html}
-
-    try:
-        r = requests.post(post_url, json=data, auth=(WP_USERNAME, WP_PASSWORD), timeout=30)
-    except Exception as e:
-        print(f"⚠️ Error updating post {post_id}:", e)
-        log_event(f"Error updating post {post_id}: {e}")
-        return
 
     if r.status_code in (200, 201):
         print(f"♻️ Updated existing post ID {post_id}")
@@ -553,4 +569,5 @@ def main_loop() -> None:
 
 if __name__ == "__main__":
     main_loop()
+
 
