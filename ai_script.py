@@ -1,35 +1,50 @@
 import os
 import time
 import random
-import re
-import requests
+import logging
 from datetime import datetime
-from openai import OpenAI
+from typing import Dict, Any, Optional
+
+import requests
 import schedule
+from openai import OpenAI
 
-# --- Environment / config ---
+# ----------------- Basic config -----------------
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-WP_URL = os.getenv("WP_URL")  # e.g. https://thesaxonblog.com/wp-json/wp/v2/posts
-WP_USERNAME = os.getenv("WP_USERNAME")
-WP_PASSWORD = os.getenv("WP_PASSWORD")
-MODEL = os.getenv("MODEL", "gpt-3.5-turbo")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
+MODEL = os.getenv("MODEL", "gpt-3.5-turbo").strip()
 
-PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
-UNSPLASH_ACCESS_KEY = os.getenv("UNSPLASH_ACCESS_KEY")
+WP_POSTS_URL = os.getenv("WP_URL", "").rstrip("/")  # e.g. https://thesaxonblog.com/wp-json/wp/v2/posts
+WP_USERNAME = os.getenv("WP_USERNAME", "")
+WP_PASSWORD = os.getenv("WP_PASSWORD", "")
 
-SITE_BASE = os.getenv("SITE_BASE", "https://thesaxonblog.com")
-AFFILIATE_TAG = "meganmcanespy-20"
+UNSPLASH_ACCESS_KEY = os.getenv("UNSPLASH_ACCESS_KEY", "").strip()
+AFFILIATE_TAG = os.getenv("AFFILIATE_TAG", "meganmcanespy-20")
+POST_INTERVAL_MINUTES = int(os.getenv("POST_INTERVAL_MINUTES", "180"))  # default 3 hours
 
-GA_MEASUREMENT_ID = "G-5W817F8MV3"
-GSC_META_TAG = '<meta name="google-site-verification" content="5cQeMbFTq8Uqoows5LH_mN2jeEyfZluanwC_g_CTHP4" />'
+if not OPENAI_API_KEY:
+    raise SystemExit("Missing OPENAI_API_KEY")
+if not WP_POSTS_URL or "/wp-json/" not in WP_POSTS_URL:
+    raise SystemExit("WP_URL must be the posts endpoint, e.g. https://thesaxonblog.com/wp-json/wp/v2/posts")
+if not WP_USERNAME or not WP_PASSWORD:
+    raise SystemExit("Missing WP_USERNAME or WP_PASSWORD")
+if not UNSPLASH_ACCESS_KEY:
+    print("WARNING: UNSPLASH_ACCESS_KEY not set. Posts will publish without featured images.")
 
-START_TIME = time.time()
-MAX_UPTIME_SECONDS = 24 * 60 * 60  # 24 hours
+WP_BASE = WP_POSTS_URL.split("/wp-json/")[0].rstrip("/")
+WP_MEDIA_URL = f"{WP_BASE}/wp-json/wp/v2/media"
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-CATEGORY_IDS = {
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+)
+log = logging.getLogger("saxon-blog")
+
+# ------------- Categories & topics -------------
+
+CATEGORIES: Dict[str, int] = {
     "dogs": 11,
     "deer season": 36,
     "hunting": 38,
@@ -39,630 +54,329 @@ CATEGORY_IDS = {
     "survival-bushcraft": 92,
 }
 
-# If you later want to hard-code specific product URLs, put them in these lists
-AMAZON_PRODUCT_LINKS = {
-    "hunting": [],
-    "fishing": [],
-    "dogs": [],
-    "recipes": [],
-    "outdoor living": [],
-    "survival-bushcraft": [],
-    "deer season": [],
-}
-
-AMAZON_SEARCH_QUERIES = {
-    "hunting": "deer+hunting+gear",
-    "deer season": "hunting+equipment",
-    "dogs": "hunting+dog+supplies",
-    "recipes": "cast+iron+cookware",
-    "fishing": "fishing+gear",
-    "outdoor living": "camping+gear",
-    "survival-bushcraft": "survival+tools",
-}
-
-topic_categories = {
-    "hunting": [
+TOPIC_BUCKETS: Dict[str, list[str]] = {
+    "deer season": [
         "Top deer hunting strategies for this season",
-        "How to clean and store your hunting gear",
-        "Best rifles and bows for new hunters",
+        "How to pattern whitetails on pressured public land",
+        "Morning vs evening deer hunts: what really works",
+        "Scent control mistakes that ruin your deer hunt",
     ],
-    "fishing": [
-        "Top bass fishing tips for beginners",
-        "How to choose the perfect fishing spot",
-        "Best bait and tackle for summer fishing",
+    "hunting": [
+        "Beginner-friendly gear list for your first hunting season",
+        "How to sight in a rifle the simple way",
+        "How to stay safe and confident on solo hunts",
+        "Cold-weather hunting tips to stay warm and focused",
     ],
     "dogs": [
-        "Training your hunting dog to retrieve",
-        "Best breeds for waterfowl hunting",
-        "How to care for your hunting dog after a long day outdoors",
+        "How to start training a hunting dog at home",
+        "Gun shyness in hunting dogs and how to prevent it",
+        "Daily routine to keep your hunting dog in peak shape",
+        "Crate training tips for active sporting dogs",
+    ],
+    "fishing": [
+        "Bank fishing tips when you don’t have a boat",
+        "Simple trout fishing setups that just work",
+        "Budget-friendly bass fishing gear for beginners",
+        "How to choose the right fishing line for any trip",
     ],
     "recipes": [
-        "Easy venison chili recipe",
-        "How to make smoked duck breast at home",
         "Simple campfire trout recipe for your next trip",
+        "Easy venison skillet dinner for busy weeknights",
+        "Freezer-friendly wild game meal prep ideas",
+        "Cast iron breakfast hash for hunting camp",
     ],
     "outdoor living": [
-        "Must-have camping gear for weekend trips",
-        "How to set up a comfortable base camp",
-        "Beginner guide to outdoor gear on a budget",
+        "Family-friendly backyard camping ideas",
+        "How to start a small home garden for beginners",
+        "Budget camping hacks for big families",
+        "How to pack your truck for a weekend outdoors",
     ],
     "survival-bushcraft": [
-        "Essential bushcraft skills for beginners",
-        "How to build a shelter in the woods",
-        "Fire starting techniques every hunter should know",
-    ],
-    "deer season": [
-        "How to prep for deer season months in advance",
-        "Scouting tips to find deer hotspots",
-        "How to pattern deer movement before the opener",
+        "Beginner bushcraft skills every hunter should know",
+        "Simple shelter-building tips using what’s around you",
+        "Basic fire-starting methods that still work when it’s wet",
+        "What to keep in a small ‘just in case’ daypack kit",
     ],
 }
 
+BUCKET_ORDER = list(TOPIC_BUCKETS.keys())
+bucket_index = 0
 
-# ----------------- Logging helpers -----------------
+# ------------- Helper functions -------------
 
-def log_event(message):
-    line = f"{datetime.now().isoformat()} | EVENT | {message}\n"
+
+def pick_topic() -> tuple[str, str, int]:
+    """Pick a category + topic + category_id in a rotating way."""
+    global bucket_index
+    bucket = BUCKET_ORDER[bucket_index % len(BUCKET_ORDER)]
+    bucket_index += 1
+    topics = TOPIC_BUCKETS[bucket]
+    topic = random.choice(topics)
+    cat_id = CATEGORIES[bucket]
+    return bucket, topic, cat_id
+
+
+def get_unsplash_image_url(topic: str) -> Optional[str]:
+    if not UNSPLASH_ACCESS_KEY:
+        return None
     try:
-        with open("published_log.txt", "a", encoding="utf-8") as f:
-            f.write(line)
-    except Exception as e:
-        print("Could not write event log:", e)
-
-
-def log_published(title, url, category):
-    line = f"{datetime.now().isoformat()} | PUBLISHED | {category} | {title} | {url}\n"
-    try:
-        with open("published_log.txt", "a", encoding="utf-8") as f:
-            f.write(line)
-    except Exception as e:
-        print("Could not write published log:", e)
-
-
-def load_rewritten_ids():
-    """Load IDs of posts we already rewritten, so we don't redo them."""
-    ids = set()
-    try:
-        with open("rewritten_ids.txt", "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line.isdigit():
-                    ids.add(int(line))
-    except FileNotFoundError:
-        pass
-    return ids
-
-
-def save_rewritten_id(post_id):
-    try:
-        with open("rewritten_ids.txt", "a", encoding="utf-8") as f:
-            f.write(str(post_id) + "\n")
-    except Exception as e:
-        print("Could not write rewritten_ids:", e)
-
-
-def check_tracking_config():
-    if GA_MEASUREMENT_ID:
-        print("GA ID:", GA_MEASUREMENT_ID)
-    else:
-        log_event("GA_MEASUREMENT_ID missing.")
-    if GSC_META_TAG:
-        print("GSC tag configured.")
-    else:
-        log_event("GSC_META_TAG missing.")
-
-
-# ----------------- Utility helpers -----------------
-
-def choose_amazon_link(category):
-    products = AMAZON_PRODUCT_LINKS.get(category, [])
-    if products:
-        return random.choice(products)
-    query = AMAZON_SEARCH_QUERIES.get(category, "outdoor+gear")
-    return f"https://www.amazon.com/s?k={query}&tag={AFFILIATE_TAG}"
-
-
-def detect_category(text):
-    t = text.lower()
-    if any(x in t for x in ["recipe", "chili", "jerky", "cook"]):
-        return "recipes"
-    if "dog" in t or "pet" in t:
-        return "dogs"
-    if "fish" in t or "bass" in t or "trout" in t:
-        return "fishing"
-    if "survival" in t or "bushcraft" in t or "shelter" in t:
-        return "survival-bushcraft"
-    if "gear" in t or "camp" in t or "outdoor" in t:
-        return "outdoor living"
-    if "rut" in t or "season" in t or "deer season" in t:
-        return "deer season"
-    if "deer" in t or "hunt" in t:
-        return "hunting"
-    return random.choice(list(topic_categories.keys()))
-
-
-def fetch_image(topic):
-    """Try Pexels first, then Unsplash fallback."""
-    if PEXELS_API_KEY:
-        try:
-            r = requests.get(
-                "https://api.pexels.com/v1/search",
-                headers={"Authorization": PEXELS_API_KEY},
-                params={"query": topic, "per_page": 1},
-                timeout=20,
-            )
-            if r.status_code == 200:
-                photos = r.json().get("photos", [])
-                if photos:
-                    return photos[0]["src"]["large"]
-        except Exception as e:
-            print("Pexels error:", e)
-            log_event(f"Pexels error: {e}")
-    try:
-        r = requests.get(f"https://source.unsplash.com/featured/?{topic}", timeout=20)
-        if r.status_code == 200:
-            return r.url
-    except Exception as e:
-        print("Unsplash error:", e)
-        log_event(f"Unsplash error: {e}")
-    return None
-
-
-def build_affiliate_cta(category):
-    url = choose_amazon_link(category)
-    return f"""
-<div class="affiliate-cta">
-  <p><strong>Recommended Gear:</strong> Want to upgrade your setup? Check out our favorite
-  <a href="{url}" target="_blank" rel="nofollow">Amazon {category} picks</a> before your next trip.</p>
-</div>
-"""
-
-
-def clean_ai_html(html):
-    """Strip ```html stuff and <html>/<body> wrappers and trim."""
-    if not html:
-        return ""
-    s = html.strip()
-    s = s.replace("```html", "").replace("```", "")
-    s = s.replace("&#8220;", "").replace("&#8221;", "")
-    for junk in ["<html>", "</html>", "<body>", "</body>"]:
-        s = s.replace(junk, "")
-    lower = s.lower()
-    for tag in ["<h1", "<h2", "<p"]:
-        idx = lower.find(tag)
-        if idx != -1:
-            s = s[idx:]
-            break
-    return s.strip()
-
-
-def strip_html_for_excerpt(html, max_len=155):
-    text = re.sub("<.*?>", "", html or "")
-    text = text.replace("\n", " ").strip()
-    if len(text) > max_len:
-        return text[:max_len].rsplit(" ", 1)[0]
-    return text
-
-
-def derive_focus_keyword(title):
-    return title.lower()
-
-
-# ----------------- New post generation -----------------
-
-def generate_content(topic, category):
-    external_sources = {
-        "hunting": ["https://www.outdoorlife.com/hunting/", "https://www.fieldandstream.com/hunting/"],
-        "deer season": ["https://www.outdoorlife.com/deer-hunting/", "https://www.nrahlf.org/articles/deer-hunting/"],
-        "fishing": ["https://www.outdoorlife.com/fishing/", "https://www.fieldandstream.com/fishing/"],
-        "dogs": ["https://www.akc.org/expert-advice/training/", "https://www.ukcdogs.com/hunting-dog-articles"],
-        "recipes": ["https://www.themeateater.com/cook", "https://www.allrecipes.com/"],
-        "survival-bushcraft": ["https://bushcraftusa.com/", "https://www.rei.com/learn/c/survival"],
-        "outdoor living": ["https://www.outsideonline.com/", "https://www.backpacker.com/"],
-    }
-    externals = external_sources.get(category, external_sources["hunting"])
-    prompt = f"""
-You are a professional content creator for a monetized outdoor blog called The Saxon Blog.
-
-Your goals:
-- Attract search traffic (SEO).
-- Keep readers on the page longer (short paragraphs, strong structure).
-- Encourage ad impressions and affiliate clicks in a natural, non-spammy way.
-
-Write a 700-900 word blog post in HTML about:
-"{topic}" (category: {category})
-
-Requirements:
-- Use <h1> for the main title at the top, then <h2> and <h3> for sections.
-- Use <p> for all paragraphs (2-4 sentences each).
-- Include at least ONE internal link to The Saxon Blog, e.g.
-  <a href="{SITE_BASE}/deer-hunting-tips/">The Saxon Blog</a>
-- Include at least ONE external link to one of these: {externals}
-- Naturally mention 2-3 pieces of gear with strong buying intent language
-  (for example: "best budget", "top-rated", "worth the upgrade") but do NOT give prices.
-- Include a short comparison-style section (for example: "Top 3 gear picks for beginners").
-- Use ONLY HTML <a href="..."> links (no Markdown).
-- Be AdSense-safe and family friendly.
-- End with a call to action to explore more articles on The Saxon Blog.
-
-Return only the HTML for the body of the article. Do NOT wrap it in code fences and do NOT add <html> or <body> tags.
-"""
-    try:
-        resp = client.chat.completions.create(
-            model=MODEL,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a skilled SEO and affiliate content writer for a hunting/outdoors blog. "
-                        "You always write clean, monetization-aware HTML."
-                    ),
-                },
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.7,
-            max_tokens=1100,
+        resp = requests.get(
+            "https://api.unsplash.com/photos/random",
+            params={
+                "query": topic,
+                "orientation": "landscape",
+                "content_filter": "high",
+            },
+            headers={"Accept-Version": "v1"},
+            timeout=20,
         )
-        raw = resp.choices[0].message.content
-        cleaned = clean_ai_html(raw)
-        if "href=" not in cleaned:
-            fallback = random.choice(externals)
-            cleaned += (
-                f'<p>For more info, check out <a href="{fallback}" target="_blank" '
-                f'rel="nofollow">this resource</a>.</p>'
-            )
-        return cleaned
+        if resp.status_code != 200:
+            log.warning("Unsplash error %s: %s", resp.status_code, resp.text[:200])
+            return None
+        data = resp.json()
+        return data.get("urls", {}).get("regular")
     except Exception as e:
-        print("OpenAI error (new content):", e)
-        log_event(f"OpenAI error (new content): {e}")
+        log.warning("Unsplash exception: %s", e)
         return None
 
 
-def post_to_wordpress(title, content, category, image_url):
-    content = clean_ai_html(content)
-    slug = title.lower().replace(" ", "-")
-    meta_description = strip_html_for_excerpt(content, 155)
-    focus_kw = derive_focus_keyword(title)
-    schema = f"""
-<script type="application/ld+json">{{
-  "@context": "https://schema.org",
-  "@type": "Article",
-  "headline": "{title}",
-  "datePublished": "{datetime.now().strftime('%Y-%m-%d')}",
-  "author": {{
-    "@type": "Person",
-    "name": "The Saxon Blog"
-  }},
-  "publisher": {{
-    "@type": "Organization",
-    "name": "The Saxon Blog"
-  }},
-  "mainEntityOfPage": "{SITE_BASE}/{slug}/"
-}}</script>
+def upload_image_to_wp(image_url: str, title: str) -> Optional[int]:
+    """Download an image and upload it to WordPress media. Return media ID or None."""
+    if not image_url:
+        return None
+    try:
+        img_resp = requests.get(image_url, timeout=30)
+        if img_resp.status_code != 200:
+            log.warning("Image download failed %s: %s", img_resp.status_code, image_url)
+            return None
+
+        filename = (title.lower().replace(" ", "-")[:40] or "image") + ".jpg"
+        headers = {
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Type": "image/jpeg",
+        }
+
+        media_resp = requests.post(
+            WP_MEDIA_URL,
+            headers=headers,
+            data=img_resp.content,
+            auth=(WP_USERNAME, WP_PASSWORD),
+            timeout=30,
+        )
+        if media_resp.status_code not in (200, 201):
+            log.warning("Media upload failed %s: %s", media_resp.status_code, media_resp.text[:200])
+            return None
+
+        media_id = media_resp.json().get("id")
+        if not media_id:
+            return None
+
+        # Optional: set alt text
+        try:
+            requests.post(
+                f"{WP_MEDIA_URL}/{media_id}",
+                json={"alt_text": title},
+                auth=(WP_USERNAME, WP_PASSWORD),
+                timeout=15,
+            )
+        except Exception:
+            pass
+
+        return media_id
+    except Exception as e:
+        log.warning("upload_image_to_wp exception: %s", e)
+        return None
+
+
+def generate_post(topic: str, category_name: str) -> Dict[str, Any]:
+    """Ask OpenAI for title, HTML body, focus keyword, and tags."""
+    system_prompt = (
+        "You are an expert outdoor blogger writing for 'The Saxon Blog'. "
+        "You sound human, conversational, and experienced, but still clear and easy to follow. "
+        "You understand SEO, monetization, and Google AdSense content policies."
+    )
+
+    user_prompt = f"""
+Write a blog post for the category "{category_name}" on the topic "{topic}" for The Saxon Blog.
+
+Audience: everyday hunters, anglers, outdoor families, and dog owners in the U.S.
+
+Requirements:
+- 900–1200 words, natural and human sounding, like a friendly expert.
+- Use clear headings (H2/H3), short paragraphs, and bullet or numbered lists where helpful.
+- SEO: weave the main idea and related phrases naturally throughout the post.
+- Include at least 2 internal links to https://thesaxonblog.com/ (invent realistic slugs).
+- Include at least 2 external links to trustworthy, high-authority sites (no Amazon links).
+- Include soft, income-focused language (recommend helpful gear, tools, or supplies) but never sound pushy or spammy.
+- AdSense-safe: no graphic details, no illegal advice, no hate, no extreme content.
+- Body must be PURE HTML using only: <p>, <h2>, <h3>, <ul>, <ol>, <li>, <strong>, <em>, <a>. 
+  Do NOT include <html>, <head>, <body>, <script>, or inline CSS/JS.
+
+Also provide:
+- a short focus keyword (3–5 words) that best describes the post for SEO
+- 5–10 short SEO tags, lowercase, no #.
+
+Respond ONLY with valid JSON in this exact structure:
+
+{{
+  "title": "Post title",
+  "content_html": "<p>...HTML content...</p>",
+  "focus_keyword": "focus keyword here",
+  "tags": ["tag one", "tag two", "tag three"]
+}}
 """
-    canonical = f'<link rel="canonical" href="{SITE_BASE}/{slug}/" />'
-    full_content = f"{content}\n{build_affiliate_cta(category)}\n\n{schema}\n{canonical}"
-    meta = {
-        "fifu_image_url": image_url or "",
-        "_aioseo_title": title,
-        "_aioseo_description": meta_description,
-        "_aioseo_focus_keyword": focus_kw,
-    }
-    data = {
+    response = client.chat.completions.create(
+        model=MODEL,
+        temperature=0.7,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+    )
+
+    raw = response.choices[0].message.content.strip()
+
+    import json
+
+    try:
+        data = json.loads(raw)
+    except Exception:
+        # Fallback if JSON is slightly broken: treat all as HTML content
+        data = {
+            "title": topic,
+            "content_html": raw,
+            "focus_keyword": topic.lower(),
+            "tags": [],
+        }
+
+    title = (data.get("title") or topic).strip()
+    content_html = (data.get("content_html") or data.get("content") or "").strip()
+    focus_keyword = (data.get("focus_keyword") or topic).strip()
+    tags = data.get("tags") or []
+
+    return {
         "title": title,
-        "slug": slug,
+        "content_html": content_html,
+        "focus_keyword": focus_keyword,
+        "tags": tags,
+    }
+
+
+def add_amazon_cta(content_html: str, category_name: str) -> str:
+    """Append a gentle Amazon CTA using your affiliate tag."""
+    base_query = {
+        "deer season": "deer+hunting+gear",
+        "hunting": "hunting+gear",
+        "dogs": "hunting+dog+gear",
+        "fishing": "fishing+gear",
+        "recipes": "cast+iron+cookware+camp",
+        "outdoor living": "camping+gear",
+        "survival-bushcraft": "survival+kit",
+    }.get(category_name, "outdoor+gear")
+
+    amazon_url = f"https://www.amazon.com/s?k={base_query}&tag={AFFILIATE_TAG}"
+
+    cta_html = f"""
+<div class="affiliate-cta">
+  <p><strong>Recommended gear:</strong> Want to upgrade your setup? Take a look at 
+  <a href="{amazon_url}" target="_blank" rel="nofollow sponsored noopener">our favorite {category_name} picks on Amazon</a>
+  before your next trip.</p>
+</div>
+"""
+    return content_html + "\n\n" + cta_html
+
+
+def create_wordpress_post(
+    title: str,
+    content_html: str,
+    category_id: int,
+    focus_keyword: str,
+    topic: str,
+) -> Optional[int]:
+    """Create a new published post in WordPress."""
+    # Try to get a category-appropriate Unsplash image & upload it
+    image_url = get_unsplash_image_url(topic)
+    media_id = upload_image_to_wp(image_url, title) if image_url else None
+
+    # Store focus keyword in post meta (even if AIOSEO uses different internal keys,
+    # this will at least be available as a custom field).
+    meta = {
+        "focus_keyword": focus_keyword,
+        "_aioseo_focus_keyphrase": focus_keyword,
+        "_aioseop_keywords": focus_keyword,
+    }
+
+    payload = {
+        "title": title,
+        "content": content_html,
         "status": "publish",
-        "excerpt": meta_description,
-        "content": full_content,
-        "categories": [CATEGORY_IDS.get(category, 1)],
+        "categories": [category_id],
         "meta": meta,
     }
-    try:
-        r = requests.post(WP_URL, json=data, auth=(WP_USERNAME, WP_PASSWORD), timeout=30)
-    except Exception as e:
-        print("WordPress request failed (new):", e)
-        log_event(f"WordPress request error (new): {e}")
-        return
-    if r.status_code == 201:
-        body = r.json()
-        link = body.get("link", "(no link)")
-        print(f"Published: {title} -> {link}")
-        log_published(title, link, category)
-    else:
-        print(f"Error posting {title}: {r.status_code} - {r.text}")
-        log_event(f"WordPress error (new) {r.status_code}: {r.text}")
+    if media_id:
+        payload["featured_media"] = media_id
 
-
-# ----------------- Existing post rewrite (ALL posts, including last 24h) -----------------
-
-def fetch_all_posts():
-    posts = []
-    page = 1
-    while True:
-        try:
-            r = requests.get(
-                WP_URL,
-                params={"per_page": 100, "page": page, "status": "publish"},
-                auth=(WP_USERNAME, WP_PASSWORD),
-                timeout=30,
-            )
-        except Exception as e:
-            print("Error fetching posts:", e)
-            log_event(f"Error fetching posts page {page}: {e}")
-            break
-        if r.status_code == 200:
-            batch = r.json()
-            if not batch:
-                break
-            posts.extend(batch)
-            page += 1
-        else:
-            print(f"Failed to fetch posts page {page}: {r.status_code} {r.text}")
-            log_event(f"Failed to fetch posts page {page}: {r.status_code} {r.text}")
-            break
-    return posts
-
-
-def rewrite_post_content(post):
-    original_html = post.get("content", {}).get("rendered", "")
-    title = post.get("title", {}).get("rendered", "(Untitled)")
-    combined_text = f"{title}\n{original_html}"
-    category = detect_category(combined_text)
-    external_sources = {
-        "hunting": ["https://www.outdoorlife.com/hunting/", "https://www.fieldandstream.com/hunting/"],
-        "deer season": ["https://www.outdoorlife.com/deer-hunting/", "https://www.nrahlf.org/articles/deer-hunting/"],
-        "fishing": ["https://www.outdoorlife.com/fishing/", "https://www.fieldandstream.com/fishing/"],
-        "dogs": ["https://www.akc.org/expert-advice/training/", "https://www.ukcdogs.com/hunting-dog-articles"],
-        "recipes": ["https://www.themeateater.com/cook", "https://www.allrecipes.com/"],
-        "survival-bushcraft": ["https://bushcraftusa.com/", "https://www.rei.com/learn/c/survival"],
-        "outdoor living": ["https://www.outsideonline.com/", "https://www.backpacker.com/"],
-    }
-    externals = external_sources.get(category, external_sources["hunting"])
-    prompt = f"""
-You are rewriting an existing monetized blog post for The Saxon Blog.
-
-Title: "{title}"
-Category: {category}
-
-Goals:
-- Keep the same main topic and overall message.
-- Improve SEO (clear headings, keywords, internal links).
-- Improve monetization: naturally encourage readers to consider outdoor gear or tools, without sounding spammy.
-- Increase readability and time-on-page.
-
-Rewrite the post in HTML that:
-- Uses <h2> and <h3> for sections (assume the theme handles <h1>).
-- Uses <p> for paragraphs (2-4 sentences each).
-- Includes at least ONE internal link to The Saxon Blog, e.g.
-  <a href="{SITE_BASE}/deer-hunting-tips/">The Saxon Blog</a>
-- Includes at least ONE external link to one of: {externals}
-- Mentions 2-3 types of gear that could reasonably be recommended (no prices).
-- Has a small comparison-style section (for example comparing gear types).
-- Uses ONLY <a href="..."> links (no Markdown).
-- Ends with a short call to action for readers to explore more posts on The Saxon Blog.
-
-Return only the updated HTML body. Do NOT wrap it in code fences and do NOT add <html> or <body> tags.
-
-Original HTML:
-{original_html}
-"""
-    try:
-        resp = client.chat.completions.create(
-            model=MODEL,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are an expert SEO and affiliate editor for an outdoor blog. "
-                        "You rewrite posts to boost search traffic and revenue while staying helpful and natural."
-                    ),
-                },
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.6,
-            max_tokens=1100,
-        )
-        raw = resp.choices[0].message.content
-        cleaned = clean_ai_html(raw)
-        if "href=" not in cleaned:
-            fallback = random.choice(externals)
-            cleaned += (
-                f'<p>Learn more from <a href="{fallback}" target="_blank" '
-                f'rel="nofollow">this trusted resource</a>.</p>'
-            )
-        return cleaned, category
-    except Exception as e:
-        print("OpenAI error (rewrite):", e)
-        log_event(f"OpenAI error (rewrite): {e}")
-        return None, None
-
-
-def update_existing_post(post, new_body_html, category, image_url):
-    """Replace the existing content directly on that post."""
-    post_id = post.get("id")
-    slug = post.get("slug", "")
-    title = post.get("title", {}).get("rendered", "(Untitled)")
-    new_body_html = clean_ai_html(new_body_html)
-    meta_description = strip_html_for_excerpt(new_body_html, 155)
-    focus_kw = derive_focus_keyword(title)
-    schema = f"""
-<script type="application/ld+json">{{
-  "@context": "https://schema.org",
-  "@type": "Article",
-  "headline": "{title}",
-  "dateModified": "{datetime.now().strftime('%Y-%m-%d')}",
-  "author": {{
-    "@type": "Person",
-    "name": "The Saxon Blog"
-  }},
-  "publisher": {{
-    "@type": "Organization",
-    "name": "The Saxon Blog"
-  }},
-  "mainEntityOfPage": "{SITE_BASE}/{slug}/"
-}}</script>
-"""
-    canonical = f'<link rel="canonical" href="{SITE_BASE}/{slug}/" />'
-    full_content = f"{new_body_html}\n{build_affiliate_cta(category)}\n\n{schema}\n{canonical}"
-    meta = {
-        "_aioseo_title": title,
-        "_aioseo_description": meta_description,
-        "_aioseo_focus_keyword": focus_kw,
-    }
-    if image_url:
-        meta["fifu_image_url"] = image_url
-
-    post_url = WP_URL.rstrip("/") + f"/{post_id}"
-    data = {"content": full_content, "meta": meta}
-    try:
-        r = requests.post(post_url, json=data, auth=(WP_USERNAME, WP_PASSWORD), timeout=30)
-    except Exception as e:
-        print(f"Error updating post {post_id}:", e)
-        log_event(f"Error updating post {post_id}: {e}")
-        return
-    if r.status_code in (200, 201):
-        print(f"Updated existing post ID {post_id}")
-        log_event(f"Updated existing post ID {post_id}")
-        save_rewritten_id(post_id)
-    else:
-        print(f"Failed to update post {post_id}: {r.status_code} {r.text}")
-        log_event(f"Failed to update post {post_id}: {r.status_code} {r.text}")
-
-
-def optimize_existing_posts(max_to_optimize=15):
-    """
-    Rewrite existing posts (including ones from the last 24 hours)
-    and replace their content directly. Each post is only rewritten once.
-    """
-    print("\nChecking existing posts for SEO/monetization rewrite...")
-    posts = fetch_all_posts()
-    if not posts:
-        print("No posts fetched; skipping optimization.")
-        return
-
-    rewritten = load_rewritten_ids()
-    optimized = 0
-
-    for post in posts:
-        if optimized >= max_to_optimize:
-            break
-        post_id = post.get("id")
-        if post_id in rewritten:
-            continue
-
-        title = post.get("title", {}).get("rendered", "(Untitled)")
-        print(f"Rewriting post ID {post_id}: {title}")
-        new_html, category = rewrite_post_content(post)
-        if not new_html or not category:
-            print("Skipping post due to rewrite failure.")
-            continue
-
-        image_url = None
-        if post.get("featured_media", 0) == 0:
-            image_url = fetch_image(title)
-
-        update_existing_post(post, new_html, category, image_url)
-        optimized += 1
-        time.sleep(5)
-
-    if optimized == 0:
-        print("No posts needed optimization (or all processed already).")
-        log_event("Optimize existing posts: none updated.")
-    else:
-        print(f"Optimized {optimized} posts this run.")
-        log_event(f"Optimized {optimized} posts this run.")
-
-
-# ----------------- Topic refresh + scheduling -----------------
-
-def refresh_topics():
-    print("\nRefreshing topic list...")
-    prompt = (
-        "Generate 10 new SEO-friendly blog post titles for The Saxon Blog. "
-        "Mix topics across hunting, fishing, hunting dogs, survival/bushcraft, outdoor living, deer season, "
-        "and wild game recipes. Each title under 10 words, catchy, and no numbering."
+    resp = requests.post(
+        WP_POSTS_URL,
+        json=payload,
+        auth=(WP_USERNAME, WP_PASSWORD),
+        timeout=30,
     )
+
+    if resp.status_code not in (200, 201):
+        log.error("Post publish failed %s: %s", resp.status_code, resp.text[:400])
+        return None
+
+    post_id = resp.json().get("id")
+    log.info("Published post %s: %s", post_id, title)
+    return post_id
+
+
+def job():
+    """One scheduled job: pick topic, generate content, publish."""
     try:
-        resp = client.chat.completions.create(
-            model=MODEL,
-            messages=[
-                {"role": "system", "content": "You create fresh SEO blog ideas for outdoor niches."},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.8,
-            max_tokens=400,
+        category_name, topic, category_id = pick_topic()
+        log.info("🦌 Generating post in category '%s' on topic: %s", category_name, topic)
+
+        post_data = generate_post(topic, category_name)
+        title = post_data["title"]
+        content_html = post_data["content_html"]
+        focus_keyword = post_data["focus_keyword"]
+
+        # Append Amazon CTA
+        content_with_cta = add_amazon_cta(content_html, category_name)
+
+        post_id = create_wordpress_post(
+            title=title,
+            content_html=content_with_cta,
+            category_id=category_id,
+            focus_keyword=focus_keyword,
+            topic=topic,
         )
-        raw = resp.choices[0].message.content
-        new_titles = [line.strip("-• ").strip() for line in raw.split("\n") if line.strip()]
+
+        if post_id:
+            log.info("✅ Published: %s (ID %s)", title, post_id)
+        else:
+            log.error("❌ Failed to publish: %s", title)
+
     except Exception as e:
-        print("Topic refresh error:", e)
-        log_event(f"Topic refresh error: {e}")
-        return
-
-    if not new_titles:
-        print("No new topics generated.")
-        log_event("No new topics generated.")
-        return
-
-    chosen_category = random.choice(list(topic_categories.keys()))
-    topic_categories[chosen_category].extend(new_titles)
-    print(f"Added {len(new_titles)} new topics to '{chosen_category}'.")
-    log_event(f"Added {len(new_titles)} new topics to {chosen_category}.")
+        log.exception("Unexpected error in job(): %s", e)
 
 
-def pick_random_topic():
-    cat = random.choice(list(topic_categories.keys()))
-    topic = random.choice(topic_categories[cat])
-    detected = detect_category(topic)
-    return topic, detected
+def main():
+    log.info("Starting The Saxon Blog auto-publisher.")
+    log.info("Model: %s | Interval: %s minutes", MODEL, POST_INTERVAL_MINUTES)
 
+    # Run once at startup
+    job()
 
-def run_batch():
-    print("\nNew post cycle:", datetime.now())
-    topic, category = pick_random_topic()
-    print(f"Topic: {topic} | Category: {category}")
-    content = generate_content(topic, category)
-    if not content:
-        print("Skipping post: generation failure.")
-        log_event("Skipped post: generation failure.")
-        return
-    image_url = fetch_image(topic)
-    post_to_wordpress(topic, content, category, image_url)
-    print("New post cycle complete.\n")
-
-
-def main_loop():
-    check_tracking_config()
-    log_event("Auto-publish system started for The Saxon Blog.")
-
-    # First run: clean up a chunk of existing posts (including recent ones) and publish one new post
-    optimize_existing_posts(max_to_optimize=30)
-    run_batch()
-
-    # New posts every 2 hours
-    schedule.every(2).hours.do(run_batch)
-    # Weekly topic refresh
-    schedule.every().sunday.at("08:00").do(refresh_topics)
-    # Daily SEO rewrite pass for older posts
-    schedule.every().day.at("03:30").do(optimize_existing_posts, max_to_optimize=15)
+    # Schedule every N minutes
+    schedule.every(POST_INTERVAL_MINUTES).minutes.do(job)
 
     while True:
-        try:
-            schedule.run_pending()
-        except Exception as e:
-            print("Scheduler error:", e)
-            log_event(f"Scheduler error: {e}")
-            time.sleep(60)
-
-        uptime = time.time() - START_TIME
-        if uptime > MAX_UPTIME_SECONDS:
-            msg = "Watchdog: exiting after 24h uptime."
-            print(msg)
-            log_event(msg)
-            break
-
-        time.sleep(60)
+        schedule.run_pending()
+        time.sleep(20)
 
 
 if __name__ == "__main__":
-    main_loop()
+    main()
