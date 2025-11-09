@@ -1,89 +1,81 @@
-import os, re, logging, requests, urllib.parse
-from datetime import datetime, timedelta
+import requests, random, time
 
-WP_URL = os.getenv("WP_URL")
-WP_USERNAME = os.getenv("WP_USERNAME")
-WP_PASSWORD = os.getenv("WP_PASSWORD")
-AMAZON_TAG = os.getenv("AMAZON_TAG", "meganmcanespy-20")
-SITE_NAME = os.getenv("SITE_NAME", "The Saxon Blog")
-REPAIR_DAYS = int(os.getenv("REPAIR_DAYS", "3650"))
+# === CONFIG ===
+WORDPRESS_URL = "https://thesaxonblog.com"
+USERNAME = "megansaxon9@gmail.com"
+APP_PASSWORD = "YGUQ xn3F p3gm Haf2 lzzS j66Q"
+UNSPLASH_TOPICS = ["hunting", "deer", "duck", "outdoors", "dogs", "country"]
+HEADERS = {"Content-Type": "application/json"}
+WP_API = f"{WORDPRESS_URL}/wp-json/wp/v2/posts"
+MEDIA_API = f"{WORDPRESS_URL}/wp-json/wp/v2/media"
 
-if not all([WP_URL, WP_USERNAME, WP_PASSWORD]):
-    raise RuntimeError("Missing WordPress credentials.")
+def get_posts():
+    r = requests.get(WP_API, auth=(USERNAME, APP_PASSWORD), params={"per_page": 50})
+    r.raise_for_status()
+    return r.json()
 
-API_BASE = WP_URL.rsplit("/posts", 1)[0]
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-logger = logging.getLogger(__name__)
+def get_unsplash_image(keyword):
+    try:
+        key = random.choice(UNSPLASH_TOPICS)
+        url = f"https://source.unsplash.com/random/1600x900/?{keyword or key}"
+        return url
+    except:
+        return None
 
-IMG_SRC_RE = re.compile(r'<img[^>]+src=["\']([^"\']+)["\']', re.I)
+def upload_image(image_url, title):
+    img_data = requests.get(image_url).content
+    filename = title.replace(" ", "_") + ".jpg"
+    r = requests.post(
+        MEDIA_API,
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+        data=img_data,
+        auth=(USERNAME, APP_PASSWORD)
+    )
+    if r.status_code == 201:
+        return r.json()["id"]
+    return None
 
-
-def build_cta(title):
-    query = urllib.parse.quote_plus(title or "outdoor gear")
-    return f'<div class="affiliate-cta"><p><strong>Recommended Gear:</strong> <a href="https://www.amazon.com/s?k={query}&tag={AMAZON_TAG}" target="_blank" rel="nofollow noopener">View Amazon picks</a>.</p></div>'
-
-
-def list_posts():
-    cutoff = datetime.utcnow() - timedelta(days=REPAIR_DAYS)
-    page = 1
-    while True:
-        r = requests.get(f"{API_BASE}/posts", params={"per_page": 100, "page": page}, auth=(WP_USERNAME, WP_PASSWORD))
-        if r.status_code != 200:
-            break
-        posts = r.json()
-        if not posts:
-            break
-        for p in posts:
-            date_str = p.get("date_gmt") or p.get("date")
-            if not date_str:
-                continue
-            dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
-            if dt >= cutoff:
-                yield p["id"]
-        page += 1
-
-
-def fix_post(pid):
-    r = requests.get(f"{API_BASE}/posts/{pid}", params={"context": "edit"}, auth=(WP_USERNAME, WP_PASSWORD))
-    if r.status_code != 200:
-        return False
-    post = r.json()
-    html = post.get("content", {}).get("rendered", "")
+def fix_post(post):
+    pid = post["id"]
     title = post["title"]["rendered"]
-    meta = post.get("meta", {})
+    modified = False
 
-    changed = False
-    if "affiliate-cta" not in html:
-        html += "\n\n" + build_cta(title)
-        changed = True
-    if not meta.get("fifu_image_url"):
-        m = IMG_SRC_RE.search(html)
-        if m:
-            meta["fifu_image_url"] = m.group(1)
-            changed = True
-    if not meta.get("_aioseo_focus_keyword"):
-        meta["_aioseo_focus_keyword"] = title[:60]
-        changed = True
+    # Fix missing featured image
+    if not post.get("featured_media") or post["featured_media"] == 0:
+        img_url = get_unsplash_image(title)
+        media_id = upload_image(img_url, title)
+        if media_id:
+            requests.post(f"{WP_API}/{pid}", json={"featured_media": media_id}, auth=(USERNAME, APP_PASSWORD))
+            print(f"🖼️ Added image for {title}")
+            modified = True
 
-    if not changed:
-        return False
+    # Fix broken Amazon links
+    content = post["content"]["rendered"]
+    if "amazon.com" in content and "href=''" in content:
+        content = content.replace("href=''", "")
+        requests.post(f"{WP_API}/{pid}", json={"content": content}, auth=(USERNAME, APP_PASSWORD))
+        print(f"🔗 Fixed links in {title}")
+        modified = True
 
-    payload = {"content": html, "meta": meta}
-    r = requests.post(f"{API_BASE}/posts/{pid}", json=payload, auth=(WP_USERNAME, WP_PASSWORD))
-    if r.status_code in (200, 201):
-        logger.info(f"✅ Repaired {pid}: {title}")
-        return True
-    return False
+    # Add SEO keyword (All in One SEO)
+    keyword = title.split(":")[0].split(" ")[0]
+    requests.post(f"{WP_API}/{pid}", json={"aioseo_focuskw": keyword}, auth=(USERNAME, APP_PASSWORD))
+    print(f"⚙️ SEO keyword added: {keyword}")
 
+    if modified:
+        print(f"✅ Updated {title}")
+    else:
+        print(f"➡️ No change for {title}")
 
 def main():
-    logger.info(f"Repairing posts for {SITE_NAME}")
-    updated = 0
-    for pid in list_posts():
-        if fix_post(pid):
-            updated += 1
-    logger.info(f"Finished — {updated} posts updated.")
-
+    posts = get_posts()
+    print(f"🦌 Checking {len(posts)} posts...")
+    for post in posts:
+        try:
+            fix_post(post)
+            time.sleep(3)
+        except Exception as e:
+            print(f"⚠️ Error on {post['id']}: {e}")
 
 if __name__ == "__main__":
     main()
