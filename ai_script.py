@@ -1,19 +1,38 @@
 import os
-import requests
-import random
 import time
+import random
+import requests
 from datetime import datetime
 from openai import OpenAI
+import schedule
 
-# === CONFIGURATION ===
+# ========= ENV / CONSTANTS =========
+
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-WP_URL = os.getenv("WP_URL")  # e.g. https://thesaxonbelong.com/wp-json/wp/v2/posts
+WP_URL = os.getenv("WP_URL")          # e.g. https://thesaxonblog.com/wp-json/wp/v2/posts
 WP_USERNAME = os.getenv("WP_USERNAME")
 WP_PASSWORD = os.getenv("WP_PASSWORD")
-PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
-MODEL = os.getenv("MODEL", "gpt-4-turbo")
 
-# === CATEGORY IDS ===
+# Default model: GPT-3.5-Turbo (cheaper)
+MODEL = os.getenv("MODEL", "gpt-3.5-turbo")
+
+PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
+UNSPLASH_ACCESS_KEY = os.getenv("UNSPLASH_ACCESS_KEY")
+
+SITE_BASE = os.getenv("SITE_BASE", "https://thesaxonblog.com")
+AFFILIATE_TAG = "meganmcanespy-20"
+
+# Your Google IDs (for info/logging only)
+GA_MEASUREMENT_ID = "G-5W817F8MV3"
+GSC_META_TAG = '<meta name="google-site-verification" content="5cQeMbFTq8Uqoows5LH_mN2jeEyfZluanwC_g_CTHP4" />'
+
+START_TIME = time.time()
+MAX_UPTIME_SECONDS = 24 * 60 * 60  # 24h watchdog
+
+client = OpenAI(api_key=OPENAI_API_KEY)
+
+# ========= WORDPRESS CATEGORY IDS =========
+
 CATEGORY_IDS = {
     "dogs": 11,
     "deer season": 36,
@@ -21,134 +40,382 @@ CATEGORY_IDS = {
     "recipes": 54,
     "fishing": 91,
     "outdoor living": 90,
-    "survival-bushcraft": 92
+    "survival-bushcraft": 92,
 }
 
-# === TAGS BY CATEGORY ===
-TAGS = {
-    "hunting": ["deer hunting", "whitetail deer", "hunting tips", "gear", "outdoors", "The Saxon Blog"],
-    "dogs": ["dog training", "hunting dogs", "canine health", "outdoors", "The Saxon Blog"],
-    "recipes": ["wild game recipes", "outdoor cooking", "campfire meals", "The Saxon Blog"],
-    "fishing": ["fishing gear", "bass fishing", "outdoors", "The Saxon Blog"],
-    "outdoor living": ["gear reviews", "camping", "nature", "The Saxon Blog"],
-    "survival-bushcraft": ["bushcraft", "survival skills", "wilderness", "The Saxon Blog"],
+# ========= TOPIC LISTS (SEED) =========
+
+topic_categories = {
+    "hunting": [
+        "Top deer hunting strategies for this season",
+        "How to clean and store your hunting gear",
+        "Best rifles and bows for new hunters",
+    ],
+    "fishing": [
+        "Top bass fishing tips for beginners",
+        "How to choose the perfect fishing spot",
+        "Best bait and tackle for summer fishing",
+    ],
+    "dogs": [
+        "Training your hunting dog to retrieve",
+        "Best breeds for waterfowl hunting",
+        "How to care for your hunting dog after a long day outdoors",
+    ],
+    "recipes": [
+        "Easy venison chili recipe",
+        "How to make smoked duck breast at home",
+        "Simple campfire trout recipe for your next trip",
+    ],
+    "outdoor living": [
+        "Must-have camping gear for weekend trips",
+        "How to set up a comfortable base camp",
+        "Beginner guide to outdoor gear on a budget",
+    ],
+    "survival-bushcraft": [
+        "Essential bushcraft skills for beginners",
+        "How to build a shelter in the woods",
+        "Fire starting techniques every hunter should know",
+    ],
+    "deer season": [
+        "How to prep for deer season months in advance",
+        "Scouting tips to find deer hotspots",
+        "How to pattern deer movement before the opener",
+    ],
 }
 
-AFFILIATE_TAG = "meganmcanespy-20"
+# ========= LOGGING =========
 
-# === OPENAI CLIENT ===
-client = OpenAI(api_key=OPENAI_API_KEY)
+def log_event(message: str) -> None:
+    line = f"{datetime.now().isoformat()} | EVENT | {message}\n"
+    try:
+        with open("published_log.txt", "a", encoding="utf-8") as f:
+            f.write(line)
+    except Exception as e:
+        print("⚠️ Could not write event log:", e)
 
 
-def detect_category(topic):
-    topic_lower = topic.lower()
-    if "recipe" in topic_lower:
+def log_published(title: str, url: str, category: str) -> None:
+    line = f"{datetime.now().isoformat()} | PUBLISHED | {category} | {title} | {url}\n"
+    try:
+        with open("published_log.txt", "a", encoding="utf-8") as f:
+            f.write(line)
+    except Exception as e:
+        print("⚠️ Could not write published log:", e)
+
+# ========= TRACKING CONFIG (INFO) =========
+
+def check_tracking_config() -> None:
+    if GA_MEASUREMENT_ID:
+        print(f"ℹ️ Google Analytics ID: {GA_MEASUREMENT_ID}")
+    else:
+        print("⚠️ GA_MEASUREMENT_ID not set.")
+        log_event("GA_MEASUREMENT_ID missing.")
+
+    if GSC_META_TAG:
+        print("ℹ️ GSC meta tag configured (must be in site header via plugin).")
+    else:
+        print("⚠️ GSC meta tag missing.")
+        log_event("GSC_META_TAG missing.")
+
+# ========= CATEGORY DETECTION =========
+
+def detect_category(topic: str) -> str:
+    t = topic.lower()
+    if "recipe" in t or "chili" in t or "jerky" in t or "cook" in t:
         return "recipes"
-    elif "dog" in topic_lower or "pet" in topic_lower:
+    if "dog" in t or "pet" in t:
         return "dogs"
-    elif "fish" in topic_lower:
+    if "fish" in t or "bass" in t or "trout" in t:
         return "fishing"
-    elif "survival" in topic_lower or "bushcraft" in topic_lower:
+    if "survival" in t or "bushcraft" in t or "shelter" in t:
         return "survival-bushcraft"
-    elif "gear" in topic_lower or "camp" in topic_lower or "outdoor" in topic_lower:
+    if "gear" in t or "camp" in t or "outdoor" in t:
         return "outdoor living"
-    elif "deer" in topic_lower or "hunt" in topic_lower:
+    if "deer" in t or "season" in t or "rut" in t:
+        return "deer season"
+    if "hunt" in t:
         return "hunting"
-    else:
-        return random.choice(list(CATEGORY_IDS.keys()))
+    # fallback random
+    return random.choice(list(topic_categories.keys()))
 
+# ========= IMAGE HANDLER =========
 
-def get_stock_image(topic):
-    """Try Pexels first, then fallback to Unsplash."""
-    headers = {"Authorization": PEXELS_API_KEY}
-    r = requests.get(f"https://api.pexels.com/v1/search?query={topic}&per_page=1", headers=headers)
-    if r.status_code == 200 and r.json()["photos"]:
-        return r.json()["photos"][0]["src"]["medium"]
-    else:
-        unsplash = requests.get(f"https://source.unsplash.com/featured/?{topic}")
-        return unsplash.url
+def fetch_image(topic: str) -> str | None:
+    """Try Pexels first, then Unsplash fallback."""
+    if PEXELS_API_KEY:
+        try:
+            r = requests.get(
+                "https://api.pexels.com/v1/search",
+                headers={"Authorization": PEXELS_API_KEY},
+                params={"query": topic, "per_page": 1},
+                timeout=20,
+            )
+            if r.status_code == 200:
+                photos = r.json().get("photos", [])
+                if photos:
+                    return photos[0]["src"]["large"]
+        except Exception as e:
+            print("⚠️ Pexels error:", e)
+            log_event(f"Pexels error: {e}")
 
+    # Unsplash simple fallback
+    try:
+        r = requests.get(f"https://source.unsplash.com/featured/?{topic}", timeout=20)
+        if r.status_code == 200:
+            return r.url
+    except Exception as e:
+        print("⚠️ Unsplash error:", e)
+        log_event(f"Unsplash error: {e}")
 
-def generate_content(topic):
-    """Generate SEO-optimized article content."""
-    prompt = (
-        f"Write a detailed, SEO-optimized blog post about '{topic}' for The Saxon Blog. "
-        "Make it between 700 and 900 words. Use engaging headings, bullet points, and short paragraphs. "
-        "Include SEO keywords, external links to authoritative sources, and at least one internal link to thesaxonbelong.com. "
-        "End with a call to action or reflection. Write in a friendly, knowledgeable tone."
-    )
+    return None
 
-    response = client.chat.completions.create(
-        model=MODEL,
-        messages=[
-            {"role": "system", "content": "You are a professional outdoor blog writer focused on SEO and affiliate content."},
-            {"role": "user", "content": prompt},
-        ],
-        temperature=0.7,
-    )
+# ========= AFFILIATE CTA =========
 
-    return response.choices[0].message.content
-
-
-def insert_affiliate_links(content, category):
-    """Insert Amazon affiliate links contextually."""
-    if category == "hunting":
-        link = f"https://www.amazon.com/s?k=hunting+gear&tag={AFFILIATE_TAG}"
+def build_affiliate_cta(category: str) -> str:
+    if category == "hunting" or category == "deer season":
+        query = "deer+hunting+gear"
     elif category == "dogs":
-        link = f"https://www.amazon.com/s?k=dog+training+gear&tag={AFFILIATE_TAG}"
+        query = "hunting+dog+training+gear"
     elif category == "recipes":
-        link = f"https://www.amazon.com/s?k=camping+cookware&tag={AFFILIATE_TAG}"
+        query = "camping+cookware"
     elif category == "fishing":
-        link = f"https://www.amazon.com/s?k=fishing+gear&tag={AFFILIATE_TAG}"
+        query = "fishing+gear"
     else:
-        link = f"https://www.amazon.com/s?k=outdoor+gear&tag={AFFILIATE_TAG}"
+        query = "outdoor+gear"
 
-    return f"{content}\n\n🛒 Check out the latest {category} products on [Amazon]({link})."
+    link = f"https://www.amazon.com/s?k={query}&tag={AFFILIATE_TAG}"
+    return f"\n\n🛒 **Gear Tip:** Want to upgrade your setup? Check out recommended {category} products on [Amazon]({link})."
 
+# ========= AI CONTENT CREATOR =========
 
-def post_to_wordpress(title, content, category, image_url):
-    """Publish a post to WordPress."""
-    tags = TAGS.get(category, ["outdoors", "The Saxon Blog"])
-    data = {
-        "title": title,
-        "content": content,
-        "status": "publish",
-        "categories": [CATEGORY_IDS.get(category, 1)],
-        "tags": tags,
-        "featured_media_url": image_url  # Works with FIFU plugin
-    }
-
-    response = requests.post(WP_URL, json=data, auth=(WP_USERNAME, WP_PASSWORD))
-    if response.status_code == 201:
-        print(f"✅ Published: {title}")
-    else:
-        print(f"❌ Error posting {title}: {response.text}")
-
-
-def main():
-    topics = [
-        "Deer hunting tips for beginners",
-        "Best fishing lures for spring bass",
-        "Homemade venison jerky recipe",
-        "How to train your hunting dog for retrieves",
-        "Top outdoor camping gear in 2025",
-        "Wilderness survival skills everyone should know",
+def generate_content(topic: str, category: str) -> str | None:
+    external_hunting = [
+        "https://www.outdoorlife.com/hunting/",
+        "https://www.fieldandstream.com/hunting/",
+    ]
+    external_fishing = [
+        "https://www.outdoorlife.com/fishing/",
+        "https://www.fieldandstream.com/fishing/",
+    ]
+    external_dogs = [
+        "https://www.akc.org/expert-advice/training/",
+        "https://www.ukcdogs.com/hunting-dog-articles",
+    ]
+    external_recipes = [
+        "https://www.themeateater.com/cook",
+        "https://www.allrecipes.com/",
+    ]
+    external_survival = [
+        "https://www.rei.com/learn/c/survival",
+        "https://bushcraftusa.com/",
+    ]
+    external_outdoor = [
+        "https://www.outsideonline.com/",
+        "https://www.backpacker.com/",
     ]
 
-    random.shuffle(topics)
+    if category in ("hunting", "deer season"):
+        external = external_hunting
+    elif category == "fishing":
+        external = external_fishing
+    elif category == "dogs":
+        external = external_dogs
+    elif category == "recipes":
+        external = external_recipes
+    elif category == "survival-bushcraft":
+        external = external_survival
+    else:
+        external = external_outdoor
 
-    for topic in topics:
-        print(f"🦌 Generating post: {topic}")
-        category = detect_category(topic)
-        content = generate_content(topic)
-        content = insert_affiliate_links(content, category)
-        image_url = get_stock_image(topic)
-        post_to_wordpress(topic, content, category, image_url)
+    prompt = f"""
+You are writing a blog post for The Saxon Blog, an outdoor lifestyle site about hunting, fishing, dogs, survival, and wild game recipes.
 
-        # Wait 3 hours between posts
-        print("⏳ Waiting 3 hours before next post...")
-        time.sleep(3 * 60 * 60)
+Topic: "{topic}"
+Category: {category}
 
+Write a **700–900 word**, SEO-optimized article that:
+- Starts with a strong H1-style title on the first line.
+- Uses H2 and H3 subheadings.
+- Uses short paragraphs (2–4 sentences).
+- Feels human, friendly, and practical.
+- Is **AdSense-safe** (no graphic content, no hate, etc.).
+- Naturally includes at least ONE internal link to The Saxon Blog using a URL like:
+  {SITE_BASE}/deer-hunting-tips/  or a similar realistic slug.
+- Naturally includes at least ONE external link to a credible site chosen from:
+  {external}
+- Is helpful for beginners and intermediate readers.
+
+Do **not** mention that you are an AI or that this is generated. End with a short call-to-action inviting readers to explore more posts on The Saxon Blog.
+"""
+
+    try:
+        resp = client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": "You are a professional SEO blog writer for an outdoor niche site."},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.7,
+            max_tokens=1100,
+        )
+        return resp.choices[0].message.content
+    except Exception as e:
+        print("⚠️ OpenAI error:", e)
+        log_event(f"OpenAI error: {e}")
+        return None
+
+# ========= WORDPRESS POSTING =========
+
+def post_to_wordpress(title: str, content: str, category: str, image_url: str | None) -> None:
+    meta_description = content[:155].replace("\n", " ")
+    slug = title.lower().replace(" ", "-")
+
+    schema = f"""
+<script type="application/ld+json">{{
+  "@context": "https://schema.org",
+  "@type": "Article",
+  "headline": "{title}",
+  "datePublished": "{datetime.now().strftime('%Y-%m-%d')}",
+  "author": {{
+    "@type": "Person",
+    "name": "The Saxon Blog"
+  }},
+  "publisher": {{
+    "@type": "Organization",
+    "name": "The Saxon Blog"
+  }},
+  "mainEntityOfPage": "{SITE_BASE}/{slug}/"
+}}</script>
+"""
+
+    canonical = f'<link rel="canonical" href="{SITE_BASE}/{slug}/" />'
+
+    full_content = f"{content}{build_affiliate_cta(category)}\n\n{schema}\n{canonical}"
+
+    data = {
+        "title": title,
+        "slug": slug,
+        "status": "publish",  # auto-publish
+        "excerpt": meta_description,
+        "content": full_content,
+        "categories": [CATEGORY_IDS.get(category, 1)],
+    }
+
+    # FIFU plugin: featured_media_url is understood as remote featured image
+    if image_url:
+        data["featured_media_url"] = image_url
+
+    try:
+        r = requests.post(WP_URL, json=data, auth=(WP_USERNAME, WP_PASSWORD), timeout=30)
+    except Exception as e:
+        print("⚠️ WordPress request failed:", e)
+        log_event(f"WordPress request error: {e}")
+        return
+
+    if r.status_code == 201:
+        body = r.json()
+        link = body.get("link", "(no link)")
+        print(f"✅ Published: {title} → {link}")
+        log_published(title, link, category)
+    else:
+        print(f"❌ Error posting {title}: {r.status_code} - {r.text}")
+        log_event(f"WordPress error {r.status_code}: {r.text}")
+
+# ========= TOPIC REFRESH (WEEKLY) =========
+
+def refresh_topics() -> None:
+    print("\n🔄 Refreshing topic list...")
+    prompt = (
+        "Generate 10 new SEO-friendly blog post titles for The Saxon Blog. "
+        "Mix topics across hunting, fishing, hunting dogs, survival/bushcraft, outdoor living, and wild game recipes. "
+        "Each title under 10 words, catchy, and no numbering."
+    )
+    try:
+        resp = client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": "You create fresh SEO blog ideas for outdoor niches."},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.8,
+            max_tokens=400,
+        )
+        raw = resp.choices[0].message.content
+        new_titles = [
+            line.strip("-• ").strip()
+            for line in raw.split("\n")
+            if line.strip()
+        ]
+    except Exception as e:
+        print("⚠️ Topic refresh error:", e)
+        log_event(f"Topic refresh error: {e}")
+        return
+
+    if not new_titles:
+        print("⚠️ No new topics generated.")
+        log_event("No new topics generated in refresh.")
+        return
+
+    chosen_category = random.choice(list(topic_categories.keys()))
+    topic_categories[chosen_category].extend(new_titles)
+    print(f"✨ Added {len(new_titles)} new topics to '{chosen_category}'.")
+    log_event(f"Added {len(new_titles)} new topics to {chosen_category}.")
+
+# ========= PICK TOPIC & RUN BATCH =========
+
+def pick_random_topic() -> tuple[str, str]:
+    cat = random.choice(list(topic_categories.keys()))
+    topic = random.choice(topic_categories[cat])
+    # Let detection override if needed
+    detected = detect_category(topic)
+    return topic, detected
+
+def run_batch() -> None:
+    print(f"\n🕒 New post cycle: {datetime.now()}")
+    topic, category = pick_random_topic()
+    print(f"🎯 Topic: {topic} | Category: {category}")
+
+    content = generate_content(topic, category)
+    if not content:
+        print("⚠️ Skipping post due to generation failure.")
+        log_event("Skipped post: generation failure.")
+        return
+
+    image_url = fetch_image(topic)
+    post_to_wordpress(topic, content, category, image_url)
+    print("✅ Cycle complete.\n")
+
+# ========= MAIN LOOP (SCHEDULER + WATCHDOG) =========
+
+def main_loop() -> None:
+    check_tracking_config()
+    log_event("Auto-publish system started for The Saxon Blog.")
+
+    # Post 1 article every 2 hours
+    schedule.every(2).hours.do(run_batch)
+
+    # Weekly topic refresh (Sunday 08:00)
+    schedule.every().sunday.at("08:00").do(refresh_topics)
+
+    # Run one immediately
+    run_batch()
+
+    while True:
+        try:
+            schedule.run_pending()
+        except Exception as e:
+            print("⚠️ Error in scheduler loop:", e)
+            log_event(f"Scheduler loop error: {e}")
+            time.sleep(60)
+
+        uptime = time.time() - START_TIME
+        if uptime > MAX_UPTIME_SECONDS:
+            msg = "Watchdog: exiting after 24h uptime to allow restart."
+            print(msg)
+            log_event(msg)
+            break
+
+        time.sleep(60)
 
 if __name__ == "__main__":
-    main()
+    main_loop()
