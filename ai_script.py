@@ -1,60 +1,74 @@
 import os
 import requests
+import time
 from openai import OpenAI
 
 # Load environment variables
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-WP_URL = os.getenv("WP_URL")          # e.g., 'https://yourdomain.com/wp-json/wp/v2/posts'
+WP_URL = os.getenv("WP_URL")
 WP_USERNAME = os.getenv("WP_USERNAME")
 WP_PASSWORD = os.getenv("WP_PASSWORD")
-MODEL = os.getenv("MODEL", "gpt-4-turbo")
 
-# Initialize OpenAI client
+# Use cheaper, faster model by default
+MODEL = os.getenv("MODEL", "gpt-3.5-turbo")
+
 client = OpenAI(api_key=OPENAI_API_KEY)
 
+# ----------------------  FUNCTIONS  ----------------------
+
 def generate_content(topic):
+    """Generate a ~400–600 word post (≈25¢ with GPT-4, ≈2¢ with GPT-3.5)."""
     prompt = (
-        f"Write a detailed, SEO-optimized blog post about '{topic}'. "
-        "Target 700-800 words. Use short paragraphs, headings, and subheadings. "
-        "Make it engaging and informative for outdoors/deer hunting enthusiasts."
+        f"Write a concise, SEO-friendly blog post (400–600 words) about '{topic}'. "
+        "Include an engaging intro, 2-3 short subheadings, and a closing paragraph."
     )
 
-    response = client.chat.completions.create(
-        model=MODEL,
-        messages=[
-            {"role": "system", "content": "You are a professional blog writer and SEO expert."},
-            {"role": "user", "content": prompt}
-        ],
-        temperature=0.7,
-    )
-    return response.choices[0].message.content
+    try:
+        response = client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": "You are a professional outdoor blog writer."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=700,          # cost guardrail
+            temperature=0.7,
+        )
+        return response.choices[0].message.content.strip()
+
+    except Exception as e:
+        print("⚠️  OpenAI error:", e)
+        return None
+
 
 def post_to_wordpress(title, content):
-    data = {
-        "title": title,
-        "content": content,
-        "status": "publish"  # use 'draft' if you want to review before publishing
-    }
-    response = requests.post(
-        WP_URL,
-        json=data,
-        auth=(WP_USERNAME, WP_PASSWORD)
-    )
-    if response.status_code == 201:
-        print(f"Post '{title}' successfully published!")
-    else:
-        print("Error publishing post:", response.text)
+    """Create a draft post in WordPress."""
+    data = {"title": title, "content": content, "status": "draft"}
+    try:
+        r = requests.post(WP_URL, json=data, auth=(WP_USERNAME, WP_PASSWORD), timeout=20)
+        if r.status_code == 201:
+            print(f"✅ Draft created: {title}")
+        else:
+            print(f"❌ WordPress error ({r.status_code}):", r.text)
+    except Exception as e:
+        print("⚠️  Request failed:", e)
+
+
+# ----------------------  MAIN LOOP  ----------------------
 
 if __name__ == "__main__":
     topics = [
         "Deer hunting tips for beginners",
         "Best deer hunting gear in 2025",
         "How to track deer effectively",
-        # add more topics as you like
+        "Essential clothing for cold weather hunts",
+        "Safety basics for new hunters"
     ]
-    
-    for topic in topics:
-        print(f"Generating content for: {topic}")
+
+    # Limit to 3 posts per run
+    for topic in topics[:3]:
+        print(f"\n🦌 Generating: {topic}")
         content = generate_content(topic)
-        post_to_wordpress(topic, content)
+        if content:
+            post_to_wordpress(topic, content)
+        time.sleep(10)  # pause between requests to prevent API spikes
 
