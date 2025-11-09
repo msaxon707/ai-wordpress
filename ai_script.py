@@ -42,22 +42,14 @@ CATEGORY_IDS = {
 }
 
 # ========= AMAZON LINKS =========
-# If you later copy actual product links from Amazon Associates,
-# put them into these lists. For now, it will fall back to search URLs.
+# Later you can paste real product URLs here.
+# For now it falls back to Amazon search pages with your tag.
 
 AMAZON_PRODUCT_LINKS = {
-    "hunting": [
-        # "https://www.amazon.com/dp/XXXXXXXXXX?tag=meganmcanespy-20",
-    ],
-    "fishing": [
-        # "https://www.amazon.com/dp/XXXXXXXXXX?tag=meganmcanespy-20",
-    ],
-    "dogs": [
-        # "https://www.amazon.com/dp/XXXXXXXXXX?tag=meganmcanespy-20",
-    ],
-    "recipes": [
-        # "https://www.amazon.com/dp/XXXXXXXXXX?tag=meganmcanespy-20",
-    ],
+    "hunting": [],
+    "fishing": [],
+    "dogs": [],
+    "recipes": [],
     "outdoor living": [],
     "survival-bushcraft": [],
     "deer season": [],
@@ -130,7 +122,7 @@ def log_event(message: str) -> None:
         with open("published_log.txt", "a", encoding="utf-8") as f:
             f.write(line)
     except Exception as e:
-        print("⚠️ Could not write event log:", e)
+        print("Could not write event log:", e)
 
 
 def log_published(title: str, url: str, category: str) -> None:
@@ -139,18 +131,17 @@ def log_published(title: str, url: str, category: str) -> None:
         with open("published_log.txt", "a", encoding="utf-8") as f:
             f.write(line)
     except Exception as e:
-        print("⚠️ Could not write published log:", e)
+        print("Could not write published log:", e)
 
 # ========= INFO / CHECKS =========
 
 def check_tracking_config() -> None:
     if GA_MEASUREMENT_ID:
-        print(f"ℹ️ Google Analytics ID: {GA_MEASUREMENT_ID}")
+        print(f"GA ID: {GA_MEASUREMENT_ID}")
     else:
         log_event("GA_MEASUREMENT_ID missing.")
-
     if GSC_META_TAG:
-        print("ℹ️ GSC meta tag configured in site header.")
+        print("GSC tag configured.")
     else:
         log_event("GSC_META_TAG missing.")
 
@@ -177,6 +168,7 @@ def detect_category(text: str) -> str:
 # ========= IMAGE HANDLING =========
 
 def fetch_image(topic: str) -> str | None:
+    # Try Pexels first
     if PEXELS_API_KEY:
         try:
             r = requests.get(
@@ -190,15 +182,16 @@ def fetch_image(topic: str) -> str | None:
                 if photos:
                     return photos[0]["src"]["large"]
         except Exception as e:
-            print("⚠️ Pexels error:", e)
+            print("Pexels error:", e)
             log_event(f"Pexels error: {e}")
 
+    # Fallback: Unsplash
     try:
         r = requests.get(f"https://source.unsplash.com/featured/?{topic}", timeout=20)
         if r.status_code == 200:
             return r.url
     except Exception as e:
-        print("⚠️ Unsplash error:", e)
+        print("Unsplash error:", e)
         log_event(f"Unsplash error: {e}")
     return None
 
@@ -213,7 +206,7 @@ def build_affiliate_cta(category: str) -> str:
 </div>
 """
 
-# ========= AI CONTENT: NEW POSTS =========
+# ========= AI CONTENT: NEW POSTS (INCOME-FOCUSED) =========
 
 def generate_content(topic: str, category: str) -> str | None:
     external_sources = {
@@ -228,29 +221,44 @@ def generate_content(topic: str, category: str) -> str | None:
     externals = external_sources.get(category, external_sources["hunting"])
 
     prompt = f"""
-You are writing a blog post for The Saxon Blog, an outdoor lifestyle site.
+You are a professional content creator for a monetized outdoor blog called The Saxon Blog.
 
-Topic: "{topic}"
-Category: {category}
+Your goals:
+- Attract search traffic (SEO).
+- Keep readers on the page longer (short paragraphs, strong structure).
+- Encourage ad impressions and affiliate clicks in a natural, non-spammy way.
 
-Write a 700–900 word, SEO-optimized article that:
-- Uses proper HTML headings: <h1> for the title on the first line, then <h2> and <h3>.
-- Uses <p> for paragraphs, 2–4 sentences each.
-- Adds at least ONE internal HTML link to The Saxon Blog, like:
+Write a 700–900 word blog post in HTML about:
+"{topic}" (category: {category})
+
+Requirements:
+- Use <h1> for the main title at the top, then <h2> and <h3> for sections.
+- Use <p> for all paragraphs (2–4 sentences each).
+- Include at least ONE internal link to The Saxon Blog, e.g.
   <a href="{SITE_BASE}/deer-hunting-tips/">The Saxon Blog</a>
-- Adds at least ONE external HTML link to one of these sources: {externals}
-- Never use Markdown links. Only use <a href="...">text</a>.
-- Is AdSense-safe (no graphic or hateful content).
-- Ends with a short call to action to explore more posts on The Saxon Blog.
+- Include at least ONE external link to one of these: {externals}
+- Naturally mention 2–3 pieces of gear with strong buying intent language
+  (e.g. "best budget", "top-rated", "worth the upgrade")
+  but do NOT fabricate prices.
+- Include a short comparison-style section (e.g. "Top 3 gear picks for beginners").
+- Use ONLY HTML <a href="..."> links (no Markdown).
+- Be AdSense-safe and family friendly.
+- End with a call to action to explore more articles on The Saxon Blog.
 
-Return only the HTML content (no explanation).
+Return only the HTML for the body of the article.
 """
 
     try:
         resp = client.chat.completions.create(
             model=MODEL,
             messages=[
-                {"role": "system", "content": "You are a skilled SEO content writer who always uses clean HTML."},
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a skilled SEO and affiliate content writer for a hunting/outdoors blog. "
+                        "You always write clean, monetization-aware HTML."
+                    ),
+                },
                 {"role": "user", "content": prompt},
             ],
             temperature=0.7,
@@ -258,21 +266,21 @@ Return only the HTML content (no explanation).
         )
         content = resp.choices[0].message.content
 
-        # Convert any Markdown-style links to HTML, just in case
+        # Just in case it sneaks in Markdown links
         content = content.replace("](", "\">").replace("[", "<a href=\"").replace(")", "</a>")
 
-        # Fallback: if somehow no link got in, append one external
+        # Fallback: ensure at least one link
         if "href=" not in content:
             fallback = random.choice(externals)
             content += f'<p>For more info, check out <a href="{fallback}" target="_blank" rel="nofollow">this resource</a>.</p>'
 
         return content
     except Exception as e:
-        print("⚠️ OpenAI error (new content):", e)
+        print("OpenAI error (new content):", e)
         log_event(f"OpenAI error (new content): {e}")
         return None
 
-# ========= POST TO WORDPRESS (NEW) =========
+# ========= POST TO WORDPRESS (NEW) – WITH FIFU IMAGE =========
 
 def post_to_wordpress(title: str, content: str, category: str, image_url: str | None) -> None:
     meta_description = content[:155].replace("\n", " ")
@@ -298,6 +306,7 @@ def post_to_wordpress(title: str, content: str, category: str, image_url: str | 
 
     canonical = f'<link rel="canonical" href="{SITE_BASE}/{slug}/" />'
 
+    # We let FIFU handle showing the featured image; no <img> HTML needed in content
     full_content = f"{content}\n{build_affiliate_cta(category)}\n\n{schema}\n{canonical}"
 
     data = {
@@ -309,26 +318,27 @@ def post_to_wordpress(title: str, content: str, category: str, image_url: str | 
         "categories": [CATEGORY_IDS.get(category, 1)],
     }
 
+    # Tell FIFU which image URL to use as the featured image
     if image_url:
-        data["featured_media_url"] = image_url  # FIFU uses this to set featured image
+        data.setdefault("meta", {})["fifu_image_url"] = image_url
 
     try:
         r = requests.post(WP_URL, json=data, auth=(WP_USERNAME, WP_PASSWORD), timeout=30)
     except Exception as e:
-        print("⚠️ WordPress request failed (new):", e)
+        print("WordPress request failed (new):", e)
         log_event(f"WordPress request error (new): {e}")
         return
 
     if r.status_code == 201:
         body = r.json()
         link = body.get("link", "(no link)")
-        print(f"✅ Published: {title} → {link}")
+        print(f"✅ Published: {title} -> {link}")
         log_published(title, link, category)
     else:
         print(f"❌ Error posting {title}: {r.status_code} - {r.text}")
         log_event(f"WordPress error (new) {r.status_code}: {r.text}")
 
-# ========= EXISTING POSTS: FETCH & REWRITE =========
+# ========= EXISTING POSTS: FETCH & REWRITE (INCOME-FOCUSED) =========
 
 def fetch_existing_posts() -> list:
     try:
@@ -350,7 +360,7 @@ def fetch_existing_posts() -> list:
         return []
 
 
-def rewrite_post_content(post: dict) -> tuple[str, str]:
+def rewrite_post_content(post: dict):
     original_html = post.get("content", {}).get("rendered", "")
     title = post.get("title", {}).get("rendered", "(Untitled)")
     combined_text = f"{title}\n{original_html}"
@@ -368,23 +378,29 @@ def rewrite_post_content(post: dict) -> tuple[str, str]:
     externals = external_sources.get(category, external_sources["hunting"])
 
     prompt = f"""
-You are rewriting an existing WordPress blog post for The Saxon Blog.
+You are rewriting an existing monetized blog post for The Saxon Blog.
 
 Title: "{title}"
 Category: {category}
 
-Rewrite the content in clean HTML that:
-- Keeps the same main topic and intent.
-- Improves SEO, headings (<h2>, <h3>), and readability.
-- Uses <p> for paragraphs, 2–4 sentences each.
-- Adds at least ONE internal HTML link to The Saxon Blog, like:
-  <a href="{SITE_BASE}/deer-hunting-tips/">The Saxon Blog</a>
-- Adds at least ONE external HTML link to one of: {externals}
-- Uses ONLY HTML <a href="..."> links (no Markdown).
-- Is AdSense-safe and friendly.
-- Ends with a short call to action inviting readers to explore more posts on The Saxon Blog.
+Goals:
+- Keep the same main topic and overall message.
+- Improve SEO (clear headings, keywords, internal links).
+- Improve monetization: naturally encourage readers to consider outdoor gear or tools, without sounding spammy.
+- Increase readability and time-on-page.
 
-Return only the updated HTML body for the post.
+Rewrite the post in HTML that:
+- Uses <h2> and <h3> for sections (assume the theme handles <h1>).
+- Uses <p> for paragraphs (2–4 sentences each).
+- Includes at least ONE internal link to The Saxon Blog, e.g.
+  <a href="{SITE_BASE}/deer-hunting-tips/">The Saxon Blog</a>
+- Includes at least ONE external link to one of: {externals}
+- Mentions 2–3 types of gear that could reasonably be recommended (no prices).
+- Has a small comparison-style section (e.g. comparing gear types).
+- Uses ONLY <a href="..."> links (no Markdown).
+- Ends with a short call to action for readers to explore more posts on The Saxon Blog.
+
+Return only the updated HTML body.
 
 Original HTML:
 {original_html}
@@ -394,7 +410,13 @@ Original HTML:
         resp = client.chat.completions.create(
             model=MODEL,
             messages=[
-                {"role": "system", "content": "You are an expert SEO editor for outdoor blogs using HTML only."},
+                {
+                    "role": "system",
+                    "content": (
+                        "You are an expert SEO + affiliate editor for an outdoor blog. "
+                        "You rewrite posts to boost search traffic and revenue while staying helpful and natural."
+                    ),
+                },
                 {"role": "user", "content": prompt},
             ],
             temperature=0.6,
@@ -446,7 +468,7 @@ def update_existing_post(post: dict, new_body_html: str, category: str, image_ur
     data = {"content": full_content}
 
     if image_url:
-        data["featured_media_url"] = image_url
+        data.setdefault("meta", {})["fifu_image_url"] = image_url
 
     try:
         r = requests.post(post_url, json=data, auth=(WP_USERNAME, WP_PASSWORD), timeout=30)
@@ -462,9 +484,8 @@ def update_existing_post(post: dict, new_body_html: str, category: str, image_ur
         print(f"⚠️ Failed to update post {post_id}: {r.status_code} {r.text}")
         log_event(f"Failed to update post {post_id}: {r.status_code} {r.text}")
 
-
 def optimize_existing_posts(max_to_optimize: int = 5) -> None:
-    print("\n🔎 Checking existing posts for SEO rewrite...")
+    print("\n🔎 Checking existing posts for SEO/monetization rewrite...")
     posts = fetch_existing_posts()
     if not posts:
         print("No posts fetched; skipping optimization.")
@@ -480,7 +501,6 @@ def optimize_existing_posts(max_to_optimize: int = 5) -> None:
         modified_str = post.get("modified_gmt") or post.get("modified")
         if not modified_str:
             continue
-
         try:
             modified_dt = datetime.fromisoformat(modified_str.replace("Z", "")).replace(tzinfo=timezone.utc)
         except Exception:
@@ -499,7 +519,6 @@ def optimize_existing_posts(max_to_optimize: int = 5) -> None:
             continue
 
         image_url = None
-        # If no featured image, try to add one
         if post.get("featured_media", 0) == 0:
             image_url = fetch_image(title)
 
@@ -508,7 +527,7 @@ def optimize_existing_posts(max_to_optimize: int = 5) -> None:
         time.sleep(5)
 
     if optimized == 0:
-        print("✅ No older posts needed optimization (or all were updated recently).")
+        print("✅ No older posts needed optimization.")
         log_event("Optimize existing posts: none updated.")
     else:
         print(f"✅ Optimized {optimized} older posts this run.")
@@ -556,7 +575,7 @@ def refresh_topics() -> None:
 
 # ========= NEW POST SCHEDULER =========
 
-def pick_random_topic() -> tuple[str, str]:
+def pick_random_topic():
     cat = random.choice(list(topic_categories.keys()))
     topic = random.choice(topic_categories[cat])
     detected = detect_category(topic)
@@ -593,7 +612,7 @@ def main_loop() -> None:
     # Weekly new topics
     schedule.every().sunday.at("08:00").do(refresh_topics)
 
-    # Daily small SEO touch-up
+    # Daily small SEO/monetization touch-up
     schedule.every().day.at("03:30").do(optimize_existing_posts)
 
     # Run one new post immediately
