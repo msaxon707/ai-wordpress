@@ -1,14 +1,14 @@
-# Use Python 3.11 slim image as base
+# Use Python 3.11 slim image as the base
 FROM python:3.11-slim
 
-# Set working directory inside container
+# Set working directory
 WORKDIR /app
 
-# Copy all files from local repo into container
+# Copy all project files into the container
 COPY . .
 
-# Install Python dependencies
+# Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Run the AI WordPress script
+# Run the main AI autoposter script
 CMD ["python", "ai_script.py"]
