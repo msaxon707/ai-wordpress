@@ -226,37 +226,41 @@ def generate_content(topic: str, category: str) -> str | None:
         external = external_outdoor
 
     prompt = f"""
-You are writing a blog post for The Saxon Blog, an outdoor lifestyle site about hunting, fishing, dogs, survival, and wild game recipes.
+You are writing a blog post for The Saxon Blog, an outdoor lifestyle site.
 
 Topic: "{topic}"
 Category: {category}
 
-Write a 700–900 word, SEO-optimized article that:
-- Starts with a strong H1-style title on the first line.
-- Uses H2 and H3 subheadings.
-- Uses short paragraphs (2–4 sentences).
-- Feels human, friendly, and practical.
-- Is AdSense-safe (no graphic content, no hate, etc.).
-- Naturally includes at least ONE internal link to The Saxon Blog using a URL like:
-  {SITE_BASE}/deer-hunting-tips/ or a similar realistic slug.
-- Naturally includes at least ONE external link to a credible site chosen from:
-  {external}
-- Ends with a short call-to-action inviting readers to explore more posts on The Saxon Blog.
-
-Do NOT mention that you are an AI or that this is generated.
+Write an **SEO-optimized article** (700–900 words) that:
+- Uses proper HTML headings (<h1>, <h2>, <h3>)
+- Includes short paragraphs and bullet points
+- Contains at least ONE internal HTML link to The Saxon Blog (use a slug like <a href="{SITE_BASE}/deer-hunting-tips/">The Saxon Blog</a>)
+- Contains at least ONE external HTML link from: {external}
+- Never use Markdown links — only <a href="...">text</a> format
+- Include a strong conclusion and stay AdSense-safe.
 """
 
     try:
         resp = client.chat.completions.create(
             model=MODEL,
             messages=[
-                {"role": "system", "content": "You are a professional SEO blog writer for an outdoor niche site."},
+                {"role": "system", "content": "You are a skilled SEO content writer who always uses HTML format."},
                 {"role": "user", "content": prompt},
             ],
             temperature=0.7,
             max_tokens=1100,
         )
-        return resp.choices[0].message.content
+        content = resp.choices[0].message.content
+
+        # Convert Markdown to HTML (backup)
+        content = content.replace("[", "<a href=\"").replace("](", "\">").replace(")", "</a>")
+
+        # Ensure at least one external link exists
+        if "href=" not in content:
+            fallback_link = random.choice(external)
+            content += f'\n<p>For more info, visit <a href="{fallback_link}" target="_blank">this source</a>.</p>'
+
+        return content
     except Exception as e:
         print("⚠️ OpenAI error:", e)
         log_event(f"OpenAI error (new post): {e}")
@@ -549,3 +553,4 @@ def main_loop() -> None:
 
 if __name__ == "__main__":
     main_loop()
+
