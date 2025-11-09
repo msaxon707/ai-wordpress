@@ -2,7 +2,7 @@ import os
 import time
 import random
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from openai import OpenAI
 import schedule
 
@@ -22,7 +22,7 @@ UNSPLASH_ACCESS_KEY = os.getenv("UNSPLASH_ACCESS_KEY")
 SITE_BASE = os.getenv("SITE_BASE", "https://thesaxonblog.com")
 AFFILIATE_TAG = "meganmcanespy-20"
 
-# Your Google IDs (for info/logging only)
+# Tracking IDs (for info/logging – you already added these via plugins)
 GA_MEASUREMENT_ID = "G-5W817F8MV3"
 GSC_META_TAG = '<meta name="google-site-verification" content="5cQeMbFTq8Uqoows5LH_mN2jeEyfZluanwC_g_CTHP4" />'
 
@@ -119,8 +119,8 @@ def check_tracking_config() -> None:
 
 # ========= CATEGORY DETECTION =========
 
-def detect_category(topic: str) -> str:
-    t = topic.lower()
+def detect_category(text: str) -> str:
+    t = text.lower()
     if "recipe" in t or "chili" in t or "jerky" in t or "cook" in t:
         return "recipes"
     if "dog" in t or "pet" in t:
@@ -135,7 +135,6 @@ def detect_category(topic: str) -> str:
         return "deer season"
     if "hunt" in t:
         return "hunting"
-    # fallback random
     return random.choice(list(topic_categories.keys()))
 
 # ========= IMAGE HANDLER =========
@@ -158,7 +157,6 @@ def fetch_image(topic: str) -> str | None:
             print("⚠️ Pexels error:", e)
             log_event(f"Pexels error: {e}")
 
-    # Unsplash simple fallback
     try:
         r = requests.get(f"https://source.unsplash.com/featured/?{topic}", timeout=20)
         if r.status_code == 200:
@@ -172,7 +170,7 @@ def fetch_image(topic: str) -> str | None:
 # ========= AFFILIATE CTA =========
 
 def build_affiliate_cta(category: str) -> str:
-    if category == "hunting" or category == "deer season":
+    if category in ("hunting", "deer season"):
         query = "deer+hunting+gear"
     elif category == "dogs":
         query = "hunting+dog+training+gear"
@@ -186,7 +184,7 @@ def build_affiliate_cta(category: str) -> str:
     link = f"https://www.amazon.com/s?k={query}&tag={AFFILIATE_TAG}"
     return f"\n\n🛒 **Gear Tip:** Want to upgrade your setup? Check out recommended {category} products on [Amazon]({link})."
 
-# ========= AI CONTENT CREATOR =========
+# ========= AI CONTENT CREATOR (NEW POSTS) =========
 
 def generate_content(topic: str, category: str) -> str | None:
     external_hunting = [
@@ -233,19 +231,19 @@ You are writing a blog post for The Saxon Blog, an outdoor lifestyle site about 
 Topic: "{topic}"
 Category: {category}
 
-Write a **700–900 word**, SEO-optimized article that:
+Write a 700–900 word, SEO-optimized article that:
 - Starts with a strong H1-style title on the first line.
 - Uses H2 and H3 subheadings.
 - Uses short paragraphs (2–4 sentences).
 - Feels human, friendly, and practical.
-- Is **AdSense-safe** (no graphic content, no hate, etc.).
+- Is AdSense-safe (no graphic content, no hate, etc.).
 - Naturally includes at least ONE internal link to The Saxon Blog using a URL like:
-  {SITE_BASE}/deer-hunting-tips/  or a similar realistic slug.
+  {SITE_BASE}/deer-hunting-tips/ or a similar realistic slug.
 - Naturally includes at least ONE external link to a credible site chosen from:
   {external}
-- Is helpful for beginners and intermediate readers.
+- Ends with a short call-to-action inviting readers to explore more posts on The Saxon Blog.
 
-Do **not** mention that you are an AI or that this is generated. End with a short call-to-action inviting readers to explore more posts on The Saxon Blog.
+Do NOT mention that you are an AI or that this is generated.
 """
 
     try:
@@ -261,10 +259,10 @@ Do **not** mention that you are an AI or that this is generated. End with a shor
         return resp.choices[0].message.content
     except Exception as e:
         print("⚠️ OpenAI error:", e)
-        log_event(f"OpenAI error: {e}")
+        log_event(f"OpenAI error (new post): {e}")
         return None
 
-# ========= WORDPRESS POSTING =========
+# ========= WORDPRESS POST (NEW POSTS) =========
 
 def post_to_wordpress(title: str, content: str, category: str, image_url: str | None) -> None:
     meta_description = content[:155].replace("\n", " ")
@@ -295,13 +293,13 @@ def post_to_wordpress(title: str, content: str, category: str, image_url: str | 
     data = {
         "title": title,
         "slug": slug,
-        "status": "publish",  # auto-publish
+        "status": "publish",
         "excerpt": meta_description,
         "content": full_content,
         "categories": [CATEGORY_IDS.get(category, 1)],
     }
 
-    # FIFU plugin: featured_media_url is understood as remote featured image
+    # FIFU plugin expects this to set featured image from remote URL
     if image_url:
         data["featured_media_url"] = image_url
 
@@ -309,7 +307,7 @@ def post_to_wordpress(title: str, content: str, category: str, image_url: str | 
         r = requests.post(WP_URL, json=data, auth=(WP_USERNAME, WP_PASSWORD), timeout=30)
     except Exception as e:
         print("⚠️ WordPress request failed:", e)
-        log_event(f"WordPress request error: {e}")
+        log_event(f"WordPress request error (new post): {e}")
         return
 
     if r.status_code == 201:
@@ -319,7 +317,134 @@ def post_to_wordpress(title: str, content: str, category: str, image_url: str | 
         log_published(title, link, category)
     else:
         print(f"❌ Error posting {title}: {r.status_code} - {r.text}")
-        log_event(f"WordPress error {r.status_code}: {r.text}")
+        log_event(f"WordPress error (new post) {r.status_code}: {r.text}")
+
+# ========= EXISTING POSTS: FETCH & REWRITE =========
+
+def fetch_existing_posts() -> list:
+    """Fetch published posts from WordPress (first page, enough for ~15 posts)."""
+    try:
+        r = requests.get(
+            WP_URL,
+            params={"per_page": 20, "status": "publish"},
+            auth=(WP_USERNAME, WP_PASSWORD),
+            timeout=30,
+        )
+        if r.status_code == 200:
+            return r.json()
+        else:
+            print(f"⚠️ Failed to fetch posts: {r.status_code} {r.text}")
+            log_event(f"Fetch existing posts failed: {r.status_code} {r.text}")
+            return []
+    except Exception as e:
+        print("⚠️ Error fetching existing posts:", e)
+        log_event(f"Error fetching existing posts: {e}")
+        return []
+
+def rewrite_post_content(post: dict) -> str | None:
+    original_html = post.get("content", {}).get("rendered", "")
+    title = post.get("title", {}).get("rendered", "(Untitled)")
+    combined_text = f"{title}\n{original_html}"
+    category = detect_category(combined_text)
+
+    prompt = f"""
+You are rewriting an existing WordPress blog post for The Saxon Blog.
+
+Goals:
+- Keep the same main topic and intent as the original.
+- Improve readability, heading structure (H2/H3), and SEO.
+- Keep it AdSense-safe.
+- Include at least one internal link to The Saxon Blog (e.g. {SITE_BASE}/deer-hunting-tips/ or similar).
+- Include at least one external link to a credible outdoor/recipe/training source relevant to the topic.
+- Add a short concluding call-to-action inviting readers to explore more on The Saxon Blog.
+
+Return ONLY the full HTML content to be stored directly in WordPress (no explanations outside the HTML).
+
+Original HTML content:
+{original_html}
+"""
+
+    try:
+        resp = client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": "You are an expert SEO editor for outdoor blogs."},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.6,
+            max_tokens=1100,
+        )
+        return resp.choices[0].message.content
+    except Exception as e:
+        print("⚠️ OpenAI error (rewrite):", e)
+        log_event(f"OpenAI error (rewrite): {e}")
+        return None
+
+def update_existing_post(post_id: int, new_html: str) -> None:
+    post_url = WP_URL.rstrip("/") + f"/{post_id}"
+    data = {"content": new_html}
+
+    try:
+        r = requests.post(post_url, json=data, auth=(WP_USERNAME, WP_PASSWORD), timeout=30)
+    except Exception as e:
+        print(f"⚠️ Error updating post {post_id}:", e)
+        log_event(f"Error updating post {post_id}: {e}")
+        return
+
+    if r.status_code in (200, 201):
+        print(f"♻️ Updated existing post ID {post_id}")
+        log_event(f"Updated existing post ID {post_id}")
+    else:
+        print(f"⚠️ Failed to update post {post_id}: {r.status_code} {r.text}")
+        log_event(f"Failed to update post {post_id}: {r.status_code} {r.text}")
+
+def optimize_existing_posts(max_to_optimize: int = 5) -> None:
+    print("\n🔎 Checking existing posts for SEO rewrite...")
+    posts = fetch_existing_posts()
+    if not posts:
+        print("No posts fetched; skipping optimization.")
+        return
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+    optimized_count = 0
+
+    for post in posts:
+        if optimized_count >= max_to_optimize:
+            break
+
+        modified_str = post.get("modified_gmt") or post.get("modified")
+        if not modified_str:
+            continue
+
+        try:
+            # WordPress format: "YYYY-MM-DDTHH:MM:SS"
+            modified_dt = datetime.fromisoformat(modified_str.replace("Z", "")).replace(tzinfo=timezone.utc)
+        except Exception:
+            continue
+
+        if modified_dt >= cutoff:
+            # Skip posts updated within last 7 days
+            continue
+
+        post_id = post.get("id")
+        title = post.get("title", {}).get("rendered", "(Untitled)")
+        print(f"♻️ Rewriting old post ID {post_id}: {title}")
+
+        new_html = rewrite_post_content(post)
+        if not new_html:
+            print("⚠️ Skipping this post due to rewrite failure.")
+            continue
+
+        update_existing_post(post_id, new_html)
+        optimized_count += 1
+        time.sleep(5)  # small delay between rewrites
+
+    if optimized_count == 0:
+        print("✅ No older posts needed optimization (or all were updated recently).")
+        log_event("Optimize existing posts: none updated.")
+    else:
+        print(f"✅ Optimized {optimized_count} older posts this run.")
+        log_event(f"Optimized {optimized_count} older posts this run.")
 
 # ========= TOPIC REFRESH (WEEKLY) =========
 
@@ -327,7 +452,7 @@ def refresh_topics() -> None:
     print("\n🔄 Refreshing topic list...")
     prompt = (
         "Generate 10 new SEO-friendly blog post titles for The Saxon Blog. "
-        "Mix topics across hunting, fishing, hunting dogs, survival/bushcraft, outdoor living, and wild game recipes. "
+        "Mix topics across hunting, fishing, hunting dogs, survival/bushcraft, outdoor living, deer season, and wild game recipes. "
         "Each title under 10 words, catchy, and no numbering."
     )
     try:
@@ -361,12 +486,11 @@ def refresh_topics() -> None:
     print(f"✨ Added {len(new_titles)} new topics to '{chosen_category}'.")
     log_event(f"Added {len(new_titles)} new topics to {chosen_category}.")
 
-# ========= PICK TOPIC & RUN BATCH =========
+# ========= PICK TOPIC & RUN BATCH (NEW POSTS) =========
 
 def pick_random_topic() -> tuple[str, str]:
     cat = random.choice(list(topic_categories.keys()))
     topic = random.choice(topic_categories[cat])
-    # Let detection override if needed
     detected = detect_category(topic)
     return topic, detected
 
@@ -391,13 +515,19 @@ def main_loop() -> None:
     check_tracking_config()
     log_event("Auto-publish system started for The Saxon Blog.")
 
-    # Post 1 article every 2 hours
+    # 1) At startup, clean up / improve up to 5 older posts (skip last 7 days)
+    optimize_existing_posts(max_to_optimize=5)
+
+    # 2) Post 1 new article every 2 hours
     schedule.every(2).hours.do(run_batch)
 
-    # Weekly topic refresh (Sunday 08:00)
+    # 3) Weekly topic refresh (Sunday 08:00)
     schedule.every().sunday.at("08:00").do(refresh_topics)
 
-    # Run one immediately
+    # 4) Daily SEO touch-up for older posts at 03:30 (optional, small batch)
+    schedule.every().day.at("03:30").do(optimize_existing_posts)
+
+    # Run one new post immediately
     run_batch()
 
     while True:
