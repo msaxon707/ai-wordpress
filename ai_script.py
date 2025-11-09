@@ -6,13 +6,14 @@ import schedule
 from datetime import datetime
 from openai import OpenAI
 
-# ========= ENVIRONMENT VARIABLES =========
+# ========= CONFIG / CONSTANTS =========
+
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-WP_URL = os.getenv("WP_URL")  # e.g. https://thesaxonblog.com/wp-json/wp/v2/posts
+WP_URL = os.getenv("WP_URL")              # e.g. https://thesaxonblog.com/wp-json/wp/v2/posts
 WP_USERNAME = os.getenv("WP_USERNAME")
 WP_PASSWORD = os.getenv("WP_PASSWORD")
 
-# Default to cheaper model; you can override in Coolify with MODEL=gpt-4-turbo
+# Default to cheaper model; override in env with MODEL=gpt-4-turbo if you want later
 MODEL = os.getenv("MODEL", "gpt-3.5-turbo")
 
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
@@ -21,9 +22,17 @@ UNSPLASH_ACCESS_KEY = os.getenv("UNSPLASH_ACCESS_KEY")
 AMAZON_TAG = "meganmcanespy-20"
 SITE_BASE = os.getenv("SITE_BASE", "https://thesaxonblog.com")
 
+# Google tracking info (you already set these via plugin; here we just track config)
+GA_MEASUREMENT_ID = "G-5W817F8MV3"
+GSC_META_TAG = '<meta name="google-site-verification" content="5cQeMbFTq8Uqoows5LH_mN2jeEyfZluanwC_g_CTHP4" />'
+
+START_TIME = time.time()
+MAX_UPTIME_SECONDS = 24 * 60 * 60  # 24 hours
+
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 # ========= AMAZON & EXTERNAL LINKS =========
+
 AMAZON_LINKS = {
     "hunting": [
         f"https://www.amazon.com/s?k=deer+hunting+gear&tag={AMAZON_TAG}",
@@ -64,6 +73,7 @@ EXTERNAL_LINKS = {
 }
 
 # ========= TOPIC LISTS =========
+
 topic_categories = {
     "hunting": [
         "Top deer hunting strategies for this season",
@@ -87,10 +97,43 @@ topic_categories = {
     ],
 }
 
+# ========= LOGGING =========
+
+def log_event(message: str) -> None:
+    line = f"{datetime.now().isoformat()} | EVENT | {message}\n"
+    try:
+        with open("published_log.txt", "a", encoding="utf-8") as f:
+            f.write(line)
+    except Exception as e:
+        print("⚠️ Could not write event log:", e)
+
+def log_published(title: str, url: str, category: str) -> None:
+    line = f"{datetime.now().isoformat()} | PUBLISHED | {category} | {title} | {url}\n"
+    try:
+        with open("published_log.txt", "a", encoding="utf-8") as f:
+            f.write(line)
+    except Exception as e:
+        print("⚠️ Could not write to published log:", e)
+
+# ========= HEALTH / TRACKING CONFIG CHECK =========
+
+def check_tracking_config() -> None:
+    if not GA_MEASUREMENT_ID:
+        print("⚠️ GA_MEASUREMENT_ID missing. Add Analytics to your site.")
+        log_event("GA_MEASUREMENT_ID missing.")
+    else:
+        print(f"ℹ️ Using Google Analytics ID: {GA_MEASUREMENT_ID}")
+
+    if not GSC_META_TAG:
+        print("⚠️ GSC meta tag missing. Make sure Search Console is verified.")
+        log_event("GSC_META_TAG missing.")
+    else:
+        print("ℹ️ Google Search Console meta tag configured (ensure it's in your site header).")
+
 # ========= IMAGE HANDLER =========
+
 def fetch_image(query: str) -> str | None:
     """Try Pexels first, then Unsplash as fallback."""
-    # Pexels
     if PEXELS_API_KEY:
         try:
             r = requests.get(
@@ -105,8 +148,8 @@ def fetch_image(query: str) -> str | None:
                     return photos[0]["src"]["large"]
         except Exception as e:
             print("⚠️ Pexels error:", e)
+            log_event(f"Pexels error: {e}")
 
-    # Unsplash fallback
     if UNSPLASH_ACCESS_KEY:
         try:
             r = requests.get(
@@ -120,10 +163,12 @@ def fetch_image(query: str) -> str | None:
                     return results[0]["urls"]["regular"]
         except Exception as e:
             print("⚠️ Unsplash error:", e)
+            log_event(f"Unsplash error: {e}")
 
     return None
 
 # ========= AI CONTENT CREATOR =========
+
 def generate_content(topic: str, category: str) -> str | None:
     amazon_list = AMAZON_LINKS.get(category, [])
     external_list = EXTERNAL_LINKS.get(category, [])
@@ -137,7 +182,7 @@ Write a 700–900 word SEO-optimized article about:
 Category: {category}
 
 Requirements:
-- Use a clear H1-style title at the top.
+- Start with a strong H1-style title at the top.
 - Use H2 and H3 subheadings.
 - Keep paragraphs short (2–4 sentences).
 - Naturally include at least ONE internal link to The Saxon Blog
@@ -165,13 +210,14 @@ Do NOT mention that you are an AI or that this is generated.
         return response.choices[0].message.content
     except Exception as e:
         print("⚠️ OpenAI error:", e)
+        log_event(f"OpenAI error: {e}")
         return None
 
 # ========= WORDPRESS PUBLISHER =========
+
 def post_to_wordpress(title: str, content: str, image_url: str | None, category: str) -> None:
     meta_description = content[:155].replace("\n", " ")
     slug = title.lower().replace(" ", "-")
-    tags = ["hunting", "outdoors", "fishing", "dogs", "recipes", "adventure"]
 
     schema = f"""
 <script type="application/ld+json">{{
@@ -186,10 +232,10 @@ def post_to_wordpress(title: str, content: str, image_url: str | None, category:
   "publisher": {{
     "@type": "Organization",
     "name": "The Saxon Blog"
-  }}
+  }},
+  "mainEntityOfPage": "{SITE_BASE}/{slug}/"
 }}</script>
 """
-
     canonical = f'<link rel="canonical" href="{SITE_BASE}/{slug}/" />'
 
     full_content = f"{content}\n\n{schema}\n{canonical}"
@@ -200,17 +246,18 @@ def post_to_wordpress(title: str, content: str, image_url: str | None, category:
         "status": "publish",  # AUTO-PUBLISH
         "excerpt": meta_description,
         "content": full_content,
-        "tags": tags,
+        # You can add categories/tags by ID later if you want.
     }
 
-    # Note: featured_media_url may require a plugin or custom handling in WP.
     if image_url:
+        # This may require a plugin that understands featured_media_url.
         data["featured_media_url"] = image_url
 
     try:
         r = requests.post(WP_URL, json=data, auth=(WP_USERNAME, WP_PASSWORD), timeout=30)
     except Exception as e:
         print("⚠️ Request to WordPress failed:", e)
+        log_event(f"WordPress request error: {e}")
         return
 
     if r.status_code == 201:
@@ -220,17 +267,10 @@ def post_to_wordpress(title: str, content: str, image_url: str | None, category:
         log_published(title, link, category)
     else:
         print(f"❌ Error posting {title}: {r.status_code} - {r.text}")
-
-# ========= LOGGING =========
-def log_published(title: str, url: str, category: str) -> None:
-    line = f"{datetime.now().isoformat()} | {category} | {title} | {url}\n"
-    try:
-        with open("published_log.txt", "a", encoding="utf-8") as f:
-            f.write(line)
-    except Exception as e:
-        print("⚠️ Could not write to log file:", e)
+        log_event(f"WordPress error {r.status_code}: {r.text}")
 
 # ========= TOPIC REFRESH (WEEKLY) =========
+
 def refresh_topics() -> None:
     print("\n🔄 Refreshing topic list...")
     refresh_prompt = (
@@ -256,17 +296,21 @@ def refresh_topics() -> None:
         ]
     except Exception as e:
         print("⚠️ Error refreshing topics:", e)
+        log_event(f"Topic refresh error: {e}")
         return
 
     if not new_titles:
         print("⚠️ No new topics generated.\n")
+        log_event("No new topics generated in refresh.")
         return
 
     chosen_category = random.choice(list(topic_categories.keys()))
     topic_categories[chosen_category].extend(new_titles)
     print(f"✨ Added {len(new_titles)} new topics to '{chosen_category}' category.\n")
+    log_event(f"Added {len(new_titles)} new topics to {chosen_category}.")
 
 # ========= TOPIC PICKER & BATCH RUN =========
+
 def pick_random_topic() -> tuple[str, str]:
     category = random.choice(list(topic_categories.keys()))
     topic = random.choice(topic_categories[category])
@@ -279,26 +323,45 @@ def run_batch() -> None:
     content = generate_content(topic, category)
     if not content:
         print("⚠️ Skipping post due to generation failure.")
+        log_event("Skipped post: generation failure.")
         return
 
     image = fetch_image(topic)
     post_to_wordpress(topic, content, image, category)
-    # Small delay for safety if you ever expand to multiple posts per run
-    time.sleep(10)
+    time.sleep(5)  # short delay safety
     print("✅ Cycle complete.\n")
 
-# ========= SCHEDULERS =========
-# 1 post every hour → "fast" but still cheap with gpt-3.5-turbo
-schedule.every().hour.do(run_batch)
-# Refresh ideas once a week
-schedule.every().sunday.at("08:00").do(refresh_topics)
+# ========= MAIN LOOP / WATCHDOG =========
 
-print("🚀 Auto-publish system active for The Saxon Blog!")
-print("🕓 Will publish 1 new post every hour and refresh topics weekly.\n")
+def main_loop() -> None:
+    check_tracking_config()
+    log_event("Auto-publish system started.")
 
-# Run one immediately at startup
-run_batch()
+    # 1 post every 2 hours (adjust here if you want faster/slower)
+    schedule.every(2).hours.do(run_batch)
+    # Refresh ideas once a week
+    schedule.every().sunday.at("08:00").do(refresh_topics)
 
-while True:
-    schedule.run_pending()
-    time.sleep(60)
+    # Run once at startup
+    run_batch()
+
+    while True:
+        try:
+            schedule.run_pending()
+        except Exception as e:
+            print("⚠️ Error in scheduler loop:", e)
+            log_event(f"Scheduler loop error: {e}")
+            time.sleep(60)  # backoff
+
+        # 24h watchdog restart
+        uptime = time.time() - START_TIME
+        if uptime > MAX_UPTIME_SECONDS:
+            msg = "Restarting after 24 hours of uptime (watchdog)."
+            print(msg)
+            log_event(msg)
+            break
+
+        time.sleep(60)
+
+if __name__ == "__main__":
+    main_loop()
