@@ -53,3 +53,8 @@ def extract_focus_keyword(title):
     """Extract focus keyword from the post title."""
     keyword = re.sub(r"[^\w\s]", "", title).strip()
     return keyword
+def generate_blog_post(topic):
+    title = f"{topic.title()}"
+    focus = topic.lower().replace(" ", ", ")
+    html_body = f"<h2>{title}</h2><p>This article covers {topic} in detail for readers interested in outdoor living, hunting, and family life.</p>"
+    return title, focus, html_body
