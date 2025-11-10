@@ -39,3 +39,4 @@ def get_featured_image_url(topic: str):
     except Exception as e:
         print(f"❌ Image fetch error: {e}")
         return None
+        
