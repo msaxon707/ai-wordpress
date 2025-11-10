@@ -1,25 +1,55 @@
-import time, random
-from config import TOPIC_POOL, INTERVAL_MINUTES
-from content_generator import generate_title_and_focus, generate_html_body
-from image_handler import fetch_image
-from wordpress_client import post_to_wordpress
+import os
+import time
+from wordpress_client import create_wordpress_post
+from content_generator import generate_blog_post
+from image_handler import get_featured_image_url
+
+# Environment variables from Coolify / .env
+WP_URL = os.getenv("WP_URL")
+WP_USERNAME = os.getenv("WP_USERNAME")
+WP_PASSWORD = os.getenv("WP_PASSWORD")
+MODEL = os.getenv("Model", "gpt-3.5-turbo")
+AFFILIATE_TAG = os.getenv("AFFILIATE_TAG", "")
+SITE_BASE = os.getenv("SITE_BASE", "")
+PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
+UNSPLASH_ACCESS_KEY = os.getenv("UNSPLASH_ACCESS_KEY")
 
 def main():
-    print("🚀 Auto-poster running for The Saxon Blog...")
-    while True:
-        item = random.choice(TOPIC_POOL)
-        topic = item["topic"]
-        category = item["category"]
-        print(f"📝 Creating new post: {topic}")
+    print("🚀 Starting AI WordPress auto-poster...")
+    topics = [
+        "duck hunting gear",
+        "campfire breakfast ideas",
+        "training german shorthaired pointers",
+        "best outdoor family activities",
+        "deer season prep guide"
+    ]
 
-        title, focus = generate_title_and_focus(topic)
-        html = generate_html_body(topic, category)
-        img_url, _ = fetch_image(topic)
+    for topic in topics:
+        print(f"\n🧠 Generating post for topic: {topic}")
 
-        post_to_wordpress(title, html, category, img_url, focus)
+        # Generate content (title, focus keyword, HTML body)
+        title, focus, content_html = generate_blog_post(topic)
 
-        print(f"Sleeping {INTERVAL_MINUTES} minutes...\n")
-        time.sleep(INTERVAL_MINUTES * 60)
+        # Get featured image from image_handler
+        image_url, image_alt = get_featured_image_url(topic)
+
+        # Create and post to WordPress
+        post_id = create_wordpress_post(
+            title=title,
+            content=content_html,
+            image_url=image_url,
+            image_alt=image_alt,
+            focus_keyword=focus,
+            affiliate_tag=AFFILIATE_TAG
+        )
+
+        if post_id:
+            print(f"✅ Successfully posted: {title} (Post ID: {post_id})")
+        else:
+            print(f"⚠️ Failed to post: {title}")
+
+        time.sleep(5)  # small pause between posts
+
 
 if __name__ == "__main__":
     main()
