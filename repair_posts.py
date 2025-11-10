@@ -1,224 +1,210 @@
 import os
 import logging
-import textwrap
-import json
-
+import re
 import requests
-import openai
+from urllib.parse import quote_plus
 
+# ---------- Logging ----------
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-MODEL = os.getenv("MODEL", "gpt-4o-mini")
-SITE_BASE = (os.getenv("SITE_BASE") or "").rstrip("/")
-WP_URL_ENV = (os.getenv("WP_URL") or "").rstrip("/")
+# ---------- Environment ----------
+WP_URL = os.getenv("WP_URL")  # should be .../wp-json/wp/v2/posts
+WP_USERNAME = os.getenv("WP_USERNAME") or os.getenv("WORDPRESS_USER")
+WP_PASSWORD = os.getenv("WP_PASSWORD") or os.getenv("WORDPRESS_APP_PASSWORD")
+SITE_BASE = os.getenv("SITE_BASE", "https://thesaxonblog.com")
+AFFILIATE_TAG = os.getenv("AFFILIATE_TAG", "meganmcanespy-20")
 
-if not SITE_BASE and WP_URL_ENV:
-    if "/wp-json" in WP_URL_ENV:
-        SITE_BASE = WP_URL_ENV.split("/wp-json")[0]
-    else:
-        SITE_BASE = WP_URL_ENV
-
-WP_USER = os.getenv("WP_USERNAME") or os.getenv("WORDPRESS_USER")
-WP_PASS = os.getenv("WP_PASSWORD") or os.getenv("WORDPRESS_APP_PASSWORD")
-PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
-
-if not (OPENAI_API_KEY and SITE_BASE and WP_USER and WP_PASS):
-    logging.error("Missing one of: OPENAI_API_KEY, SITE_BASE, WP_USERNAME/WP_PASSWORD")
+if not (WP_URL and WP_USERNAME and WP_PASSWORD):
+    logging.error("Missing WP_URL or WP_USERNAME or WP_PASSWORD")
     raise SystemExit(1)
 
-openai.api_key = OPENAI_API_KEY
-
-POSTS_URL = f"{SITE_BASE}/wp-json/wp/v2/posts"
-MEDIA_URL = f"{SITE_BASE}/wp-json/wp/v2/media"
-CATEGORIES_URL = f"{SITE_BASE}/wp-json/wp/v2/categories"
-
-CATEGORY_OPTIONS = ["Hunting", "Dogs", "Recipes", "Outdoors", "Gear Reviews"]
-
-session = requests.Session()
-session.auth = (WP_USER, WP_PASS)
-
-
-def ensure_category_id(name: str) -> int:
-    name = (name or "").strip()
-    if not name or name not in CATEGORY_OPTIONS:
-        name = "Hunting"
-
-    r = session.get(CATEGORIES_URL, params={"search": name, "per_page": 50})
-    r.raise_for_status()
-    for cat in r.json():
-        if cat["name"].lower() == name.lower():
-            return cat["id"]
-
-    r = session.post(CATEGORIES_URL, json={"name": name})
-    r.raise_for_status()
-    logging.info(f"Created category '{name}' (id={r.json()['id']})")
-    return r.json()["id"]
+# ---------- Categories ----------
+CATEGORIES = {
+    "dogs": 11,
+    "deer-season": 36,
+    "hunting": 38,
+    "recipes": 54,
+    "fishing": 91,
+    "outdoor-living": 90,
+    "survival-bushcraft": 92,
+}
 
 
-def search_pexels_image(query: str) -> str | None:
-    if not PEXELS_API_KEY:
-        return None
-    headers = {"Authorization": PEXELS_API_KEY}
-    params = {"query": query or "hunting", "per_page": 1, "orientation": "landscape"}
-    r = requests.get("https://api.pexels.com/v1/search", headers=headers, params=params)
-    if r.status_code != 200:
-        logging.warning(f"Pexels error {r.status_code}: {r.text}")
-        return None
-    data = r.json()
-    if not data.get("photos"):
-        return None
-    photo = data["photos"][0]
-    return photo["src"].get("large") or photo["src"].get("original")
+def guess_category_from_title(title: str):
+    t = title.lower()
+    if any(w in t for w in ["dog", "puppy", "bird dog", "gsp"]):
+        return CATEGORIES["dogs"]
+    if any(w in t for w in ["recipe", "smoked", "fried", "campfire", "cook", "grill"]):
+        return CATEGORIES["recipes"]
+    if any(w in t for w in ["trout", "bass", "crappie", "fishing", "river", "lake"]):
+        return CATEGORIES["fishing"]
+    if any(w in t for w in ["rut", "deer season", "early season", "late season"]):
+        return CATEGORIES["deer-season"]
+    if any(w in t for w in ["bushcraft", "survival"]):
+        return CATEGORIES["survival-bushcraft"]
+    if any(w in t for w in ["camp", "tent", "gear review", "gear"]):
+        return CATEGORIES["outdoor-living"]
+    if any(w in t for w in ["deer", "bowhunting", "rifle", "muzzleloader", "hunt"]):
+        return CATEGORIES["hunting"]
+    return None
 
 
-def upload_featured_image(image_url: str, title: str) -> int | None:
-    try:
-        img_resp = requests.get(image_url, timeout=20)
-        img_resp.raise_for_status()
-    except Exception as e:
-        logging.warning(f"Error downloading image: {e}")
-        return None
-
-    filename = "repaired-featured.jpg"
-    headers = {
-        "Content-Disposition": f"attachment; filename={filename}",
-        "Content-Type": img_resp.headers.get("Content-Type", "image/jpeg"),
-    }
-    params = {"alt_text": title[:180]}
-    r = session.post(MEDIA_URL, params=params, headers=headers, data=img_resp.content)
-    if r.status_code not in (200, 201):
-        logging.warning(f"Failed to upload media: {r.status_code} {r.text}")
-        return None
-
-    media = r.json()
-    return media.get("id")
+def derive_focus_keyword_from_title(title: str) -> str:
+    cleaned = re.sub(r"[^a-zA-Z0-9\s]", "", title)
+    return cleaned.lower().strip()
 
 
-def guess_category_and_focus(title: str, content: str) -> tuple[str, str]:
-    """Ask OpenAI for a category + focus keyword based on an existing post."""
-    prompt = textwrap.dedent(f"""
-        You are helping clean up old WordPress posts about hunting, fishing,
-        dogs, recipes and outdoor life.
+def build_affiliate_cta_from_title(title: str) -> str:
+    t = title.lower()
+    if "dog" in t or "puppy" in t:
+        term = "hunting dog supplies"
+    elif "trout" in t or "bass" in t or "fishing" in t:
+        term = "fishing tackle"
+    elif "recipe" in t or "smoked" in t or "campfire" in t:
+        term = "campfire cooking gear"
+    elif "bushcraft" in t or "survival" in t:
+        term = "survival gear"
+    elif "deer" in t:
+        term = "deer hunting gear"
+    else:
+        term = "outdoor gear"
 
-        Post title: "{title}"
-
-        Content (snippet):
-        {content[:800]}
-
-        Choose the BEST matching category from exactly:
-        {", ".join(CATEGORY_OPTIONS)}
-
-        Also pick one natural focus keyword for SEO.
-
-        Return ONLY JSON like:
-        {{
-          "category": "...",
-          "focus_keyword": "..."
-        }}
-    """)
-    resp = openai.ChatCompletion.create(
-        model=MODEL,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.3,
-        max_tokens=200,
-    )
-    text = resp.choices[0].message["content"]
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError:
-        return "Hunting", title.split(":")[0][:60]
-    return (
-        data.get("category", "Hunting"),
-        data.get("focus_keyword") or title.split(":")[0][:60],
-    )
+    url = f"https://www.amazon.com/s?k={quote_plus(term)}&tag={AFFILIATE_TAG}"
+    return f"""
+<div class="affiliate-cta">
+  <p><strong>Recommended gear:</strong> Want to upgrade your setup? Check out our favorite
+    <a href="{url}" target="_blank" rel="nofollow sponsored noopener">Amazon picks</a> before your next trip.
+  </p>
+</div>
+""".strip()
 
 
-def fetch_all_posts() -> list[dict]:
-    posts = []
+def clean_html_content(html: str) -> str:
+    # Remove ```html, ``` and stray “`html etc.
+    html = re.sub(r"`{3,}.*?`{3,}", "", html, flags=re.DOTALL)
+    html = re.sub(r"[“”]`?html", "", html, flags=re.IGNORECASE)
+    html = re.sub(r"</?html[^>]*>", "", html, flags=re.IGNORECASE)
+    html = re.sub(r"</?body[^>]*>", "", html, flags=re.IGNORECASE)
+    return html.strip()
+
+
+def extract_first_image_src(html: str):
+    m = re.search(r'src="([^"]+)"', html)
+    if m:
+        return m.group(1)
+    return None
+
+
+def get_all_posts():
+    all_posts = []
     page = 1
     while True:
-        r = session.get(
-            POSTS_URL,
-            params={"per_page": 100, "page": page, "status": "publish"},
+        logging.info("Fetching posts page %d...", page)
+        resp = requests.get(
+            WP_URL,
+            params={"per_page": 100, "page": page},
+            auth=(WP_USERNAME, WP_PASSWORD),
+            timeout=30,
         )
-        if r.status_code == 400 and "rest_post_invalid_page_number" in r.text:
+        if resp.status_code == 400 and "rest_post_invalid_page_number" in resp.text:
             break
-        r.raise_for_status()
-        batch = r.json()
+        if resp.status_code != 200:
+            logging.error("Error fetching posts page %d: %s", page, resp.text[:300])
+            break
+        batch = resp.json()
         if not batch:
             break
-        posts.extend(batch)
+        all_posts.extend(batch)
+        if len(batch) < 100:
+            break
         page += 1
-    return posts
+    logging.info("Total posts found: %d", len(all_posts))
+    return all_posts
 
 
 def repair_post(post: dict):
-    post_id = post["id"]
-    title = post["title"]["rendered"]
-    logging.info(f"🔧 Checking post {post_id}: {title}")
-
-    # We only see content as HTML string
+    post_id = post.get("id")
+    title = post.get("title", {}).get("rendered", "")
     content = post.get("content", {}).get("rendered", "")
+    categories = post.get("categories", []) or []
+    meta = post.get("meta", {}) or {}
 
-    # Ask AI for category + focus keyword
-    cat_name, focus_keyword = guess_category_and_focus(title, content)
-    cat_id = ensure_category_id(cat_name)
+    original_content = content
+    original_categories = list(categories)
+    original_meta = dict(meta)
 
-    patch: dict = {}
-    meta_updates: dict = {}
+    # 1) Clean weird HTML wrappers
+    content = clean_html_content(content)
 
-    # Category missing?
-    if not post.get("categories"):
-        patch["categories"] = [cat_id]
-        logging.info(f"  → Category set to {cat_name}")
+    # 2) Ensure FIFU featured image from first <img> if missing
+    if not meta.get("fifu_image_url"):
+        img_src = extract_first_image_src(content)
+        if img_src:
+            meta["fifu_image_url"] = img_src
 
-    # Featured image missing?
-    if not post.get("featured_media"):
-        img_url = search_pexels_image(title)
-        if img_url:
-            media_id = upload_featured_image(img_url, title)
-            if media_id:
-                patch["featured_media"] = media_id
-                logging.info(f"  → Added featured image (media id {media_id})")
-        else:
-            logging.info("  → No image found for this post")
+    # 3) Guess category if missing
+    if not categories:
+        guessed = guess_category_from_title(title)
+        if guessed:
+            categories = [guessed]
 
-    # Always (re)set AIOSEO meta
-    meta_updates["_aioseo_focus_keyphrase"] = focus_keyword
-    meta_updates["_aioseo_title"] = title[:60]
-    meta_updates["_aioseo_description"] = (content.replace("\n", " ")[:155])
+    # 4) Ensure affiliate CTA exists
+    if "affiliate-cta" not in content:
+        cta_html = build_affiliate_cta_from_title(title)
+        content = content.strip() + "\n\n" + cta_html
 
-    if meta_updates:
-        patch["meta"] = meta_updates
-        logging.info(f"  → SEO keyword set: {focus_keyword}")
+    # 5) Add simple focus keyword for AIOSEO (best effort)
+    focus_kw = derive_focus_keyword_from_title(title)
+    if focus_kw:
+        meta["_aioseo_focus_keyphrase"] = focus_kw
 
-    if not patch:
-        logging.info("  → No change for this post.")
+    # Check if anything changed
+    changed = (
+        content != original_content
+        or categories != original_categories
+        or meta != original_meta
+    )
+
+    if not changed:
+        logging.info("Post %s: nothing to change.", post_id)
         return
 
-    r = session.post(f"{POSTS_URL}/{post_id}", json=patch)
-    if r.status_code not in (200, 201):
-        logging.error(f"  ✖ Failed to update post {post_id}: {r.status_code} {r.text}")
+    payload = {"content": content}
+    if categories:
+        payload["categories"] = categories
+    if meta:
+        payload["meta"] = meta
+
+    logging.info("Updating post %s (%s)...", post_id, title)
+    resp = requests.post(
+        f"{WP_URL}/{post_id}",
+        json=payload,
+        auth=(WP_USERNAME, WP_PASSWORD),
+        timeout=30,
+    )
+    if resp.status_code not in (200, 201):
+        logging.error("Error updating post %s: %s", post_id, resp.text[:500])
     else:
-        logging.info(f"  ✅ Updated post {post_id}")
+        logging.info("✅ Repaired post %s", post_id)
 
 
 def main():
     logging.info("🔧 Repairing all posts on The Saxon Blog...")
-    posts = fetch_all_posts()
-    logging.info(f"Found {len(posts)} posts.")
+    posts = get_all_posts()
+    if not posts:
+        logging.info("No posts found.")
+        return
 
     for p in posts:
         try:
             repair_post(p)
         except Exception as e:
-            logging.exception(f"Error repairing post {p.get('id')}: {e}")
+            logging.exception("Error repairing post %s: %s", p.get("id"), e)
 
-    logging.info("✅ All posts checked.")
+    logging.info("✅ All posts repaired successfully!")
 
 
 if __name__ == "__main__":
