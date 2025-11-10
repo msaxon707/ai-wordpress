@@ -1,33 +1,54 @@
-from openai import OpenAI
+import openai
+import random
 import re
-from config import MODEL, OPENAI_API_KEY
+import textwrap
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+openai.api_key = os.getenv("OPENAI_API_KEY")
+MODEL = "gpt-3.5-turbo"
 
-def generate_title_and_focus(topic: str):
-    """Generate blog title and SEO keyword."""
-    resp = client.chat.completions.create(
+def generate_meta(title, topic):
+    """Generate SEO title (≤60 chars) and meta description (≤160 chars)."""
+    seo_title = (title[:57] + "...") if len(title) > 60 else title
+    prompt = f"Write a concise 160-character meta description for a blog post about {topic}."
+    completion = openai.ChatCompletion.create(
         model=MODEL,
-        messages=[{"role": "user", "content": f"Create an SEO blog title and focus keyword for: {topic}"}],
+        messages=[{"role": "user", "content": prompt}]
     )
-    content = resp.choices[0].message.content.strip()
-    title_match = re.search(r'"title":\s*"([^"]+)"', content)
-    focus_match = re.search(r'"focus_keyword":\s*"([^"]+)"', content)
-    title = title_match.group(1) if title_match else topic.title()
-    focus = focus_match.group(1) if focus_match else topic.lower()
-    return title, focus
+    meta_desc = completion.choices[0].message["content"].strip()
+    if len(meta_desc) > 160:
+        meta_desc = meta_desc[:157] + "..."
+    return seo_title, meta_desc
 
+def generate_content(topic, keyword_list, affiliate_links):
+    """Generate full post content with headings, affiliate links, and internal link placeholder."""
+    keyword_text = ", ".join(keyword_list)
+    affiliate_text = " ".join(
+        [f'<p><a href="{link}" target="_blank" rel="nofollow noopener">Buy on Amazon</a></p>' for link in affiliate_links]
+    )
 
-def generate_html_body(topic: str, category: str):
-    """Generate HTML post body."""
     prompt = f"""
-Write a 900-1100 word blog post for The Saxon Blog about '{topic}'.
-Include HTML headings (h2, h3), short paragraphs, friendly tone.
-Focus on {category}. Include tips, insights, and readability.
-Return only HTML content.
-"""
-    resp = client.chat.completions.create(
+    Write a detailed, SEO-optimized blog post about '{topic}'.
+    Include H2 and H3 headings, a conversational intro, and a conclusion.
+    Use the following keywords naturally: {keyword_text}.
+    Do not include a top image.
+    Add a credit line at the end that says "Image courtesy of Pexels."
+    Add {affiliate_text} naturally within the content.
+    Include this placeholder at the bottom for internal links: {{internal_links}}
+    """
+
+    completion = openai.ChatCompletion.create(
         model=MODEL,
-        messages=[{"role": "user", "content": prompt}],
+        messages=[{"role": "user", "content": prompt}]
     )
-    return resp.choices[0].message.content.strip()
+    content = completion.choices[0].message["content"].strip()
+
+    # Ensure it has at least one H2
+    if "<h2>" not in content:
+        content = re.sub(r"(\n|$)", "\n<h2>Key Takeaways</h2>", content, count=1)
+
+    return textwrap.dedent(content)
+
+def extract_focus_keyword(title):
+    """Extract focus keyword from the post title."""
+    keyword = re.sub(r"[^\w\s]", "", title).strip()
+    return keyword
