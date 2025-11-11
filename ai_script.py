@@ -31,7 +31,9 @@ def main():
         title, focus, content_html = generate_blog_post(topic)
 
         # Get featured image from image_handler
-        image_url, image_alt = get_featured_image_url(topic)
+        image_url = get_featured_image_url(topic)
+        image_alt = topic
+
 
         # Create and post to WordPress
         post_id = create_wordpress_post(
