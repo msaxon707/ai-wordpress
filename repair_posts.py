@@ -38,25 +38,27 @@ def wp_post(url, json=None, data=None, headers=None, method="POST"):
 
 
 def fetch_all_posts():
-    """Fetch all published posts with meta + content."""
-    print("🔍 Fetching all posts from WordPress...")
-    all_posts = []
     page = 1
+    all_posts = []
+
     while True:
-        resp = wp_get(
-            WP_POSTS_URL,
-            per_page=20,
-            page=page,
-            status="publish",
-            context="edit",  # include meta
-        )
+        print(f"🔍 Fetching page {page}...")
+        resp = wp_get(f"{WP_URL}?per_page=10&page={page}&status=publish")
+
+        if resp.status_code == 400:
+            print(f"⚠️ No more posts found at page {page}. Stopping.")
+            break
+
         posts = resp.json()
         if not posts:
             break
+
         all_posts.extend(posts)
         page += 1
-    print(f"✅ Found {len(all_posts)} posts.")
+
+    print(f"✅ Total posts fetched: {len(all_posts)}")
     return all_posts
+
 
 
 def fetch_categories():
