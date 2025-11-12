@@ -4,7 +4,11 @@ import time
 from urllib.parse import urlparse
 
 import requests
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoupimport os
+
+# Define your WordPress REST API URL
+WP_URL = os.getenv("WP_URL", "https://thesaxonblog.com/wp-json/wp/v2/posts")
+
 
 # ------------ CONFIG FROM ENV ------------
 
