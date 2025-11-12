@@ -36,14 +36,17 @@ def main():
 
 
         # Create and post to WordPress
-        post_id = create_wordpress_post(
-            title=title,
-            content=content_html,
-            image_url=image_url,
-            image_alt=image_alt,
-            focus_keyword=focus,
-            affiliate_tag=AFFILIATE_TAG
-        )
+  post_id = create_wordpress_post(
+    WP_URL,
+    WP_USERNAME,
+    WP_PASSWORD,
+    title,
+    content_html,
+    image_url,
+    image_alt,
+    affiliate_tag=AFFILIATE_TAG,
+    focus_keyword=focus_keyword
+)
 
         if post_id:
             print(f"✅ Successfully posted: {title} (Post ID: {post_id})")
