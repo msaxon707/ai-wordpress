@@ -12,8 +12,14 @@ def create_wordpress_post(
     content,
     image_url=None,
     image_alt=None,
-    affiliate_tag=None
+    affiliate_tag=None,
+    focus_keyword=None
 ):
+    """
+    Creates a post on WordPress with optional featured image, affiliate tag, and SEO focus keyword.
+    """
+
+    # ✅ Add affiliate section if tag is provided
     if affiliate_tag:
         affiliate_section = f"""
         <p><strong>Looking for gear?</strong> 
@@ -22,6 +28,15 @@ def create_wordpress_post(
         """
         content += affiliate_section
 
+    # ✅ Add SEO focus keyword if provided
+    if focus_keyword:
+        seo_meta = f"""
+        <!-- SEO Focus Keyword: {focus_keyword} -->
+        <meta name="keywords" content="{focus_keyword}">
+        """
+        content += seo_meta
+
+    # ✅ Upload the image to WordPress media if available
     featured_media_id = None
     if image_url:
         try:
@@ -44,6 +59,7 @@ def create_wordpress_post(
         except Exception as e:
             print(f"❌ Error uploading image: {e}")
 
+    # ✅ Prepare post data
     post_data = {
         "title": title,
         "content": content,
@@ -52,6 +68,7 @@ def create_wordpress_post(
     if featured_media_id:
         post_data["featured_media"] = featured_media_id
 
+    # ✅ Send post to WordPress
     try:
         headers = {
             "Authorization": "Basic " + base64.b64encode(f"{username}:{password}".encode()).decode(),
