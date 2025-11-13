@@ -57,6 +57,9 @@ def main():
 
         # Get featured image
         image_url, image_alt = get_featured_image_url(topic)
+        # Add simple Pexels credit line
+        content_html += '<p style="font-size:0.9em; color:#777;">Photo via Pexels</p>'
+
 
         # ✅ Post to WordPress with all arguments
         post_id = create_wordpress_post(
