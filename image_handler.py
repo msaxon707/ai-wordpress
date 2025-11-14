@@ -1,4 +1,3 @@
-# image_handler.py
 import requests
 import random
 import os
@@ -9,40 +8,50 @@ UNSPLASH_ACCESS_KEY = os.getenv("UNSPLASH_ACCESS_KEY")
 
 def get_featured_image_url(topic: str):
     """
-    Fetch a featured image URL (plus simple alt text) from Pexels or Unsplash.
-    Returns: (image_url, alt_text) or (None, None)
+    Returns:
+        (image_url, alt_text, mime_type)
     """
     try:
         image_urls = []
+        mime_type = "image/jpeg"
 
-        # Try Pexels
+        # ------- PEXELS -------
         if PEXELS_API_KEY:
             pexels_url = f"https://api.pexels.com/v1/search?query={topic}&per_page=10"
-            headers = {"Authorization": PEXELS_API_KEY}
-            response = requests.get(pexels_url, headers=headers, timeout=10)
+            response = requests.get(pexels_url, headers={"Authorization": PEXELS_API_KEY}, timeout=10)
+
             if response.ok:
                 photos = response.json().get("photos", [])
-                image_urls.extend([p["src"]["large"] for p in photos])
+                for p in photos:
+                    url = p["src"].get("large") or p["src"].get("original")
+                    if url:
+                        image_urls.append((url, "image/jpeg"))
 
-        # Try Unsplash if no images yet
+        # ------- UNSPLASH -------
         if not image_urls and UNSPLASH_ACCESS_KEY:
-            unsplash_url = (
-                f"https://api.unsplash.com/search/photos"
-                f"?query={topic}&per_page=10&client_id={UNSPLASH_ACCESS_KEY}"
-            )
+            unsplash_url = f"https://api.unsplash.com/search/photos?query={topic}&per_page=10&client_id={UNSPLASH_ACCESS_KEY}"
             response = requests.get(unsplash_url, timeout=10)
+
             if response.ok:
                 results = response.json().get("results", [])
-                image_urls.extend([r["urls"]["regular"] for r in results])
+                for r in results:
+                    url = r["urls"].get("regular")
+                    if url:
+                        # detect mime from url ending
+                        if url.endswith(".png"):
+                            image_urls.append((url, "image/png"))
+                        else:
+                            image_urls.append((url, "image/jpeg"))
 
         if image_urls:
-            url = random.choice(image_urls)
-            alt = f"Photo related to {topic}"
-            return url, alt
+            selected = random.choice(image_urls)
+            url, mime = selected
+            alt = f"{topic.title()} photo"
+            return url, alt, mime
 
         print("⚠️ No image found for:", topic)
-        return None, None
+        return None, None, None
 
     except Exception as e:
         print(f"❌ Image fetch error: {e}")
-        return None, None
+        return None, None, None
