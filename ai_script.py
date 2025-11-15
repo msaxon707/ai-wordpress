@@ -71,3 +71,24 @@ def main():
     if match_id:
         print(f"Updating existing post id={match_id} title='{topic}'")
         post_id = wp.update_post(
+            post_id=match_id,
+            title=topic,
+            html_content=normalized_html,
+            excerpt=excerpt,
+            status=os.getenv("WP_STATUS", "publish"),
+        )
+    else:
+        print(f"Creating new post title='{topic}'")
+        if getattr(SETTINGS, "DRY_RUN", False):
+            print("DRY_RUN=1 → not posting. Preview:\n", normalized_html[:800])
+            return
+        post_id = wp.create_post(
+            title=topic,
+            html_content=normalized_html,
+            excerpt=excerpt,
+            status=os.getenv("WP_STATUS", "publish"),
+        )
+    print(f"Post ID: {post_id}")
+
+if __name__ == "__main__":
+    main()
