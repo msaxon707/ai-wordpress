@@ -1,17 +1,18 @@
 # =========================
-# path: ai_script.py  (REPLACE FILE)
+# path: ai_script.py  (DROP-IN REPLACEMENT)
 # =========================
 import os
+import sys
+import argparse
 from typing import Optional, List
 from openai import OpenAI
 from config import SETTINGS
 from content_normalizer import normalize_post_html
 from wordpress_client import WordPressClient
 
-PLACEHOLDER_TOPICS = {"sample topic", "topic", "test", "hello world"}
+PLACEHOLDER_TOPICS = {"sample topic", "topic", "test", "hello world", ""}
 
 def _call_ai_to_generate_body(topic: str, include_links: Optional[List[str]]) -> str:
-    # HTML-only to avoid '#' and Markdown leakage.
     if not SETTINGS.OPENAI_API_KEY:
         links = ""
         if include_links:
@@ -35,20 +36,27 @@ def _make_excerpt_from_text(text: str, limit: int = 220) -> str:
     s = " ".join((text or "").split())
     return (s[:limit] + "…") if len(s) > limit else s
 
+def _resolve_topic() -> tuple[str, bool]:
+    parser = argparse.ArgumentParser(description="AI → WordPress publisher")
+    parser.add_argument("--topic", help="Post title/topic")
+    parser.add_argument("--force", action="store_true", help="Allow placeholder topics")
+    parser.add_argument("--include-links", default="", help="Comma-separated URLs to weave in")
+    args = parser.parse_args()
+
+    topic = (args.topic or os.environ.get("TOPIC", "")).strip()
+    include_links = [u.strip() for u in (args.include_links or os.getenv("INCLUDE_LINKS","")).split(",") if u.strip()] or None
+    force = bool(args.force or os.getenv("FORCE_POST") in {"1","true","yes"})
+    return topic, force, include_links
+
 def main():
-    topic = os.environ.get("TOPIC", "").strip()
-    if not topic or topic.lower() in PLACEHOLDER_TOPICS:
-        raise SystemExit("Refusing to post without a real TOPIC. Set TOPIC to a meaningful title.")
+    topic, force, include_links = _resolve_topic()
+    if (topic.lower() in PLACEHOLDER_TOPICS) and not force:
+        sys.exit("Refusing to post without a real TOPIC. Use --topic 'Your Title' or set env TOPIC. Add --force to override.")
 
-    include_links_env = os.environ.get("INCLUDE_LINKS", "")
-    include_links = [u.strip() for u in include_links_env.split(",") if u.strip()] or None
-
-    # Generate + normalize
     raw_body = _call_ai_to_generate_body(topic=topic, include_links=include_links)
     normalized_html = normalize_post_html(raw_body, affiliate_domains=SETTINGS.AFFILIATE_DOMAINS)
     excerpt = _make_excerpt_from_text(raw_body)
 
-    # WP client
     wp = WordPressClient(
         base_url=SETTINGS.WP_BASE_URL,
         username=SETTINGS.WP_USERNAME,
@@ -56,35 +64,10 @@ def main():
     )
     print(f"Endpoint: {wp.posts_endpoint}")
 
-    # --- UPSERT LOGIC ---
-    # 1) See if a post with the same title already exists.
+    # Upsert by exact title
     matches = wp.search_posts(title=topic, per_page=5)
     match_id = next((p["id"] for p in matches if (p.get("title", {}).get("rendered","").strip().lower() == topic.lower())), None)
 
     if match_id:
-        # Update in place
         print(f"Updating existing post id={match_id} title='{topic}'")
         post_id = wp.update_post(
-            post_id=match_id,
-            title=topic,
-            html_content=normalized_html,
-            excerpt=excerpt,
-            status=os.getenv("WP_STATUS", "publish"),
-        )
-    else:
-        # Create new
-        print(f"Creating new post title='{topic}'")
-        if getattr(SETTINGS, "DRY_RUN", False):
-            print("DRY_RUN=1 → not posting. Preview:\n", normalized_html[:800])
-            return
-        post_id = wp.create_post(
-            title=topic,
-            html_content=normalized_html,
-            excerpt=excerpt,
-            status=os.getenv("WP_STATUS", "publish"),
-        )
-
-    print(f"Post ID: {post_id}")
-
-if __name__ == "__main__":
-    main()
