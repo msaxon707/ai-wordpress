@@ -1,4 +1,9 @@
-openai>=1.0.0
-requests
-beautifulsoup4
-
+# ======================================================================
+# File: requirements.txt
+# Path: ./requirements.txt
+# Purpose: Dependencies required by the normalizer
+# ======================================================================
+# Keep your existing requirements here...
+Markdown>=3.6
+beautifulsoup4>=4.12.2
+requests>=2.31.0
