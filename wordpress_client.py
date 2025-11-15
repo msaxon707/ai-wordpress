@@ -1,10 +1,10 @@
 # =========================
-# path: wordpress_client.py  (normalize host-only + posts_endpoint)
+# path: wordpress_client.py  (REPLACE FILE)
 # =========================
 from dataclasses import dataclass
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlencode
 import base64, json, requests
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
 @dataclass
 class WordPressClient:
@@ -41,6 +41,19 @@ class WordPressClient:
             "Accept": "application/json",
         }
 
+    # ---- Read/Search ----
+    def search_posts(self, title: str, per_page: int = 5) -> List[Dict[str, Any]]:
+        """
+        Returns recent posts whose title matches the search term.
+        """
+        params = {"search": title, "per_page": per_page, "context": "edit"}
+        url = f"{self.posts_endpoint}?{urlencode(params)}"
+        resp = requests.get(url, headers=self._json_headers())
+        if resp.status_code != 200:
+            raise RuntimeError(f"WP search_posts failed: {resp.status_code} {resp.text}")
+        return resp.json()
+
+    # ---- Create ----
     def create_post(
         self,
         title: str,
@@ -57,3 +70,21 @@ class WordPressClient:
         if resp.status_code not in (200, 201):
             raise RuntimeError(f"WP create_post failed: {resp.status_code} {resp.text}")
         return int(resp.json()["id"])
+
+    # ---- Update ----
+    def update_post(
+        self,
+        post_id: int,
+        title: Optional[str] = None,
+        html_content: Optional[str] = None,
+        excerpt: Optional[str] = None,
+        status: Optional[str] = None,
+        categories: Optional[list[int]] = None,
+        tags: Optional[list[int]] = None,
+    ) -> int:
+        payload: Dict[str, Any] = {}
+        if title is not None: payload["title"] = title
+        if html_content is not None: payload["content"] = html_content
+        if excerpt is not None: payload["excerpt"] = excerpt
+        if status is not None: payload["status"] = status
+        if categories: payload["categories"]
