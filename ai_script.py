@@ -1,10 +1,14 @@
-from __future__ import annotations
+# =========================
+# path: ai_script.py  (REPLACE FILE)
+# =========================
 import os
 from typing import Optional, List
 from openai import OpenAI
 from config import SETTINGS
 from content_normalizer import normalize_post_html
 from wordpress_client import WordPressClient
+
+PLACEHOLDER_TOPICS = {"sample topic", "topic", "test", "hello world"}
 
 def _call_ai_to_generate_body(topic: str, include_links: Optional[List[str]]) -> str:
     # HTML-only to avoid '#' and Markdown leakage.
@@ -31,30 +35,56 @@ def _make_excerpt_from_text(text: str, limit: int = 220) -> str:
     s = " ".join((text or "").split())
     return (s[:limit] + "…") if len(s) > limit else s
 
-def generate_article(topic: str, include_links: Optional[List[str]] = None) -> dict:
-    title = f"{topic}".strip() or "Untitled"
-    raw_body = _call_ai_to_generate_body(topic=topic, include_links=include_links)
-    excerpt = _make_excerpt_from_text(raw_body)
-    return {"title": title, "content": raw_body, "excerpt": excerpt}
-
 def main():
-    topic = os.environ.get("TOPIC", "Sample Topic")
+    topic = os.environ.get("TOPIC", "").strip()
+    if not topic or topic.lower() in PLACEHOLDER_TOPICS:
+        raise SystemExit("Refusing to post without a real TOPIC. Set TOPIC to a meaningful title.")
+
     include_links_env = os.environ.get("INCLUDE_LINKS", "")
     include_links = [u.strip() for u in include_links_env.split(",") if u.strip()] or None
 
-    article = generate_article(topic, include_links=include_links)
+    # Generate + normalize
+    raw_body = _call_ai_to_generate_body(topic=topic, include_links=include_links)
+    normalized_html = normalize_post_html(raw_body, affiliate_domains=SETTINGS.AFFILIATE_DOMAINS)
+    excerpt = _make_excerpt_from_text(raw_body)
 
-    normalized_html = normalize_post_html(article["content"], affiliate_domains=SETTINGS.AFFILIATE_DOMAINS)
+    # WP client
+    wp = WordPressClient(
+        base_url=SETTINGS.WP_BASE_URL,
+        username=SETTINGS.WP_USERNAME,
+        application_password=SETTINGS.WP_APP_PASSWORD,
+    )
+    print(f"Endpoint: {wp.posts_endpoint}")
 
-    wp = WordPressClient(base_url=SETTINGS.WP_BASE_URL, username=SETTINGS.WP_USERNAME, application_password=SETTINGS.WP_APP_PASSWORD)
-    print(f"Publishing to: {wp.base_url}/wp-json/wp/v2/posts")
+    # --- UPSERT LOGIC ---
+    # 1) See if a post with the same title already exists.
+    matches = wp.search_posts(title=topic, per_page=5)
+    match_id = next((p["id"] for p in matches if (p.get("title", {}).get("rendered","").strip().lower() == topic.lower())), None)
 
-    if SETTINGS.DRY_RUN:
-        print("DRY_RUN=1 → not posting. Preview:\n", normalized_html[:800])
-        return
+    if match_id:
+        # Update in place
+        print(f"Updating existing post id={match_id} title='{topic}'")
+        post_id = wp.update_post(
+            post_id=match_id,
+            title=topic,
+            html_content=normalized_html,
+            excerpt=excerpt,
+            status=os.getenv("WP_STATUS", "publish"),
+        )
+    else:
+        # Create new
+        print(f"Creating new post title='{topic}'")
+        if getattr(SETTINGS, "DRY_RUN", False):
+            print("DRY_RUN=1 → not posting. Preview:\n", normalized_html[:800])
+            return
+        post_id = wp.create_post(
+            title=topic,
+            html_content=normalized_html,
+            excerpt=excerpt,
+            status=os.getenv("WP_STATUS", "publish"),
+        )
 
-    post_id = wp.create_post(title=article["title"], html_content=normalized_html, excerpt=article.get("excerpt") or "", status=os.getenv("WP_STATUS", "publish"))
-    print(f"Published post ID: {post_id}")
+    print(f"Post ID: {post_id}")
 
 if __name__ == "__main__":
     main()
