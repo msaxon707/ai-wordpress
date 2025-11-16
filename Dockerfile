@@ -9,6 +9,6 @@ COPY . .
 
 EXPOSE 3000
 
-# 1. Run the posting script ONCE (it can auto-generate topics)
-# 2. Stay alive on port 3000 so Coolify stays healthy
-CMD ["bash", "-c", "python ai_script.py || true; python -m http.server 3000"]
+# Keep the container alive for Coolify health checks.
+# DO NOT run the autoposter automatically.
+CMD ["python", "-m", "http.server", "3000"]
