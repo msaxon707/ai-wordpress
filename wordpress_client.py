@@ -1,14 +1,12 @@
-# =========================
 # wordpress_client.py
-# CLEAN / WITH MEDIA SUPPORT
-# =========================
+# Minimal WordPress REST client with media upload support
 
 from dataclasses import dataclass
-from urllib.parse import urlparse, urlencode
+from urllib.parse import urlparse
+from typing import Any, Dict, List, Optional
+
 import base64
-import json
 import requests
-from typing import Optional, List, Dict, Any
 
 
 @dataclass
@@ -19,7 +17,7 @@ class WordPressClient:
 
     def __post_init__(self) -> None:
         if not self.base_url:
-            raise ValueError("WP_BASE_URL is empty (e.g., https://your-site.com).")
+            raise ValueError("WP_URL / base_url is empty (e.g. https://thesaxonblog.com).")
 
         raw = self.base_url.strip()
         if not raw.startswith(("http://", "https://")):
@@ -28,11 +26,13 @@ class WordPressClient:
         p = urlparse(raw)
         scheme = p.scheme or "https"
         host = p.netloc or p.path.split("/")[0]
-        if not host:
-            raise ValueError(f"WP_BASE_URL looks invalid: {self.base_url!r}")
 
-        # Normalize: only scheme + host
+        if not host:
+            raise ValueError(f"WP_URL looks invalid: {self.base_url!r}")
+
         self.base_url = f"{scheme}://{host}"
+
+    # ----------- Endpoints -----------
 
     @property
     def posts_endpoint(self) -> str:
@@ -42,156 +42,73 @@ class WordPressClient:
     def media_endpoint(self) -> str:
         return f"{self.base_url}/wp-json/wp/v2/media"
 
-    # ----------------------
-    # AUTH HEADERS
-    # ----------------------
-    def _auth_header(self) -> dict[str, str]:
-        token = f"{self.username}:{self.application_password}".encode("utf-8")
-        b64 = base64.b64encode(token).decode("utf-8")
+    # ----------- Auth helpers -----------
+
+    @property
+    def _auth_header(self) -> Dict[str, str]:
+        token = f"{self.username}:{self.application_password}"
+        b64 = base64.b64encode(token.encode("utf-8")).decode("ascii")
         return {"Authorization": f"Basic {b64}"}
 
-    def _json_headers(self) -> dict[str, str]:
-        return {
-            **self._auth_header(),
-            "Content-Type": "application/json; charset=utf-8",
-            "Accept": "application/json",
-        }
+    # ----------- Media upload -----------
 
-    # ----------------------
-    # SEARCH POSTS
-    # ----------------------
-    def search_posts(self, title: str, per_page: int = 5) -> List[Dict[str, Any]]:
-        """Search posts by title text."""
-        params = {"search": title, "per_page": per_page, "context": "edit"}
-        url = f"{self.posts_endpoint}?{urlencode(params)}"
-        resp = requests.get(url, headers=self._json_headers())
-
-        if resp.status_code != 200:
-            raise RuntimeError(f"WP search_posts failed: {resp.status_code} {resp.text}")
-
-        return resp.json()
-
-    # ----------------------
-    # MEDIA UPLOAD
-    # ----------------------
     def upload_image_from_bytes(
         self,
         image_bytes: bytes,
         filename: str,
         mime_type: str = "image/jpeg",
-        alt_text: str = "",
-    ) -> int:
-        """
-        Upload an image to WordPress and return the media ID.
-        """
-        headers = self._auth_header().copy()
-        headers["Content-Disposition"] = f'attachment; filename="{filename}"'
-
+        alt_text: Optional[str] = None,
+    ) -> Optional[int]:
         files = {
             "file": (filename, image_bytes, mime_type),
+        }
+        headers = {
+            **self._auth_header,
+            "Content-Disposition": f'attachment; filename="{filename}"',
         }
         data: Dict[str, Any] = {}
         if alt_text:
             data["alt_text"] = alt_text
-            data["title"] = alt_text
 
-        resp = requests.post(
-            self.media_endpoint,
-            headers=headers,
-            files=files,
-            data=data,
-        )
-
+        resp = requests.post(self.media_endpoint, headers=headers, files=files, data=data, timeout=30)
         if resp.status_code not in (200, 201):
-            raise RuntimeError(
-                f"WP upload_image failed: {resp.status_code} {resp.text}"
-            )
+            print(f"⚠️ Failed to upload media: {resp.status_code} - {resp.text}")
+            return None
 
         media = resp.json()
-        return int(media["id"])
+        media_id = media.get("id")
+        print(f"🖼  Media uploaded. ID={media_id}")
+        return media_id
 
-    # ----------------------
-    # CREATE POST
-    # ----------------------
+    # ----------- Post creation -----------
+
     def create_post(
         self,
         title: str,
         html_content: str,
         excerpt: str = "",
-        status: str = "draft",
-        categories: Optional[list[int]] = None,
-        tags: Optional[list[int]] = None,
+        status: str = "publish",
+        categories: Optional[List[int]] = None,
         featured_media: Optional[int] = None,
-    ) -> int:
-        """Create a new WordPress post."""
+    ) -> Optional[int]:
         payload: Dict[str, Any] = {
             "title": title,
             "content": html_content,
-            "excerpt": excerpt,
+            "excerpt": excerpt or "",
             "status": status,
         }
 
         if categories:
             payload["categories"] = categories
-        if tags:
-            payload["tags"] = tags
-        if featured_media is not None:
+        if featured_media:
             payload["featured_media"] = featured_media
 
-        resp = requests.post(
-            self.posts_endpoint,
-            headers=self._json_headers(),
-            data=json.dumps(payload),
-        )
-
+        resp = requests.post(self.posts_endpoint, headers=self._auth_header, json=payload, timeout=30)
         if resp.status_code not in (200, 201):
-            raise RuntimeError(
-                f"WP create_post failed: {resp.status_code} {resp.text}"
-            )
+            print(f"⚠️ Failed to create post: {resp.status_code} - {resp.text}")
+            return None
 
-        return int(resp.json()["id"])
-
-    # ----------------------
-    # UPDATE POST
-    # ----------------------
-    def update_post(
-        self,
-        post_id: int,
-        title: Optional[str] = None,
-        html_content: Optional[str] = None,
-        excerpt: Optional[str] = None,
-        status: Optional[str] = None,
-        categories: Optional[list[int]] = None,
-        tags: Optional[list[int]] = None,
-        featured_media: Optional[int] = None,
-    ) -> int:
-        """
-        Update an existing WordPress post by ID.
-        Only fields you provide will be updated.
-        """
-        payload: Dict[str, Any] = {}
-
-        if title is not None:
-            payload["title"] = title
-        if html_content is not None:
-            payload["content"] = html_content
-        if excerpt is not None:
-            payload["excerpt"] = excerpt
-        if status is not None:
-            payload["status"] = status
-        if categories:
-            payload["categories"] = categories
-        if tags:
-            payload["tags"] = tags
-        if featured_media is not None:
-            payload["featured_media"] = featured_media
-
-        url = f"{self.posts_endpoint}/{post_id}"
-        resp = requests.post(url, headers=self._json_headers(), data=json.dumps(payload))
-
-        if resp.status_code not in (200, 201):
-            raise RuntimeError(
-                f"WP update_post failed: {resp.status_code} {resp.text}"
-            )
-
-        return int(resp.json()["id"])
+        post = resp.json()
+        post_id = post.get("id")
+        print(f"📝 Post created. ID={post_id}")
+        return post_id
