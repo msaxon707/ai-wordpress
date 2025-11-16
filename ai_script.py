@@ -1,242 +1,288 @@
-# =========================
-# ai_script.py
-# =========================
+#!/usr/bin/env python3
 import os
 import sys
-import argparse
+import re
+import json
+import random
 from typing import Optional, List
 
-import requests
 from openai import OpenAI
-
-from config import SETTINGS
-from content_normalizer import normalize_post_html
-from wordpress_client import WordPressClient
-from image_handler import get_featured_image_url
-
-PLACEHOLDER_TOPICS = {"sample topic", "topic", "test", "hello world", ""}
+from wordpress_client import WordpressClient
+from content_normalizer import normalize_html
+from image_handler import fetch_image_for_topic
 
 
-# -------------------------
-# AI BODY GENERATION
-# -------------------------
-def _call_ai_to_generate_body(topic: str, include_links: Optional[List[str]]) -> str:
-    """Generate HTML-only body via OpenAI, or fallback sample if no API key."""
-    if not SETTINGS.OPENAI_API_KEY:
-        # Fallback mode for testing
-        links = ""
-        if include_links:
-            bullets = "\n".join(f"- [{u}]({u})" for u in include_links)
-            links = f"\n\n**References**\n\n{bullets}\n"
+# -------------------------------------------------------------------
+#  CATEGORY IDS (YOUR WORDPRESS CATEGORY NUMBERS)
+# -------------------------------------------------------------------
+CATEGORY_IDS = {
+    "dogs": 11,
+    "fishing": 91,
+    "hunting": 38,
+    "outdoor_gear": 90,
+    "recipes": 54,
+    "camping": 92,
+    "deer_season": 96,
+    "uncategorized": 1,
+}
 
-        return (
-            f"<h2>{topic}</h2>"
-            f"<p>This is a sample article body about <strong>{topic}</strong>.</p>"
-            f"<ul><li>Point one</li><li>Point two</li></ul>"
-            f"<p>Visit https://example.com for more info.</p>{links}"
-        )
 
-    client = OpenAI(api_key=SETTINGS.OPENAI_API_KEY)
+# -------------------------------------------------------------------
+#  AFFILIATE PRODUCTS FILE
+# -------------------------------------------------------------------
+AFFILIATE_FILE = "affiliate_products.json"
 
-    system_prompt = (
-        "You are a blogging assistant for an outdoors / country lifestyle blog. "
-        "Output STRICT HTML only using: <h2>, <p>, <ul>, <ol>, <li>, <a>. "
-        "No Markdown. No code fences. Keep paragraphs short, scannable, and SEO-friendly. "
-        "Work in affiliate-style product mentions when natural."
+
+# -------------------------------------------------------------------
+#  LOAD AFFILIATE PRODUCT LIBRARY
+# -------------------------------------------------------------------
+def load_affiliate_products(path: str = AFFILIATE_FILE) -> dict:
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            print("🛒 Loaded affiliate product library.")
+            return data
+    except Exception as e:
+        print(f"⚠️ Could not load affiliate_products.json: {e}")
+
+    return {}
+
+
+# -------------------------------------------------------------------
+#  CHOOSE WHICH AFFILIATE BUCKET(S) TO USE
+# -------------------------------------------------------------------
+def choose_affiliate_buckets(topic: str, wp_categories: Optional[List[int]]) -> List[str]:
+    t = topic.lower()
+    buckets = []
+
+    # WP Category → Affiliate bucket mapping
+    if wp_categories:
+        if CATEGORY_IDS["dogs"] in wp_categories:
+            buckets.append("dogs_gsp")
+
+        if CATEGORY_IDS["fishing"] in wp_categories:
+            buckets.append("fishing")
+
+        if CATEGORY_IDS["camping"] in wp_categories:
+            buckets.append("camping")
+
+        if CATEGORY_IDS["deer_season"] in wp_categories or CATEGORY_IDS["hunting"] in wp_categories:
+            buckets.append("deer_hunting")
+            buckets.append("hunting")
+
+        if CATEGORY_IDS["recipes"] in wp_categories:
+            buckets.append("kitchen_recipes")
+
+        if CATEGORY_IDS["outdoor_gear"] in wp_categories:
+            buckets.append("hunting")
+            buckets.append("survival_bushcraft")
+
+    # Keyword backups
+    if "gift" in t or "present" in t:
+        buckets.append("gifts_country_men")
+
+    if any(w in t for w in ["decor", "farmhouse", "home", "living room", "bedroom"]):
+        buckets.append("farmhouse_decor")
+
+    if any(w in t for w in ["bbq", "grill", "smoker", "pellet"]):
+        buckets.append("outdoor_cooking")
+
+    # Fallback default
+    if not buckets:
+        buckets = ["hunting", "camping", "gifts_country_men"]
+
+    # Remove duplicates
+    seen = set()
+    uniq = []
+    for b in buckets:
+        if b not in seen:
+            seen.add(b)
+            uniq.append(b)
+
+    return uniq
+
+
+# -------------------------------------------------------------------
+#  PICK 5–10 AFFILIATE PRODUCTS FOR THE POST
+# -------------------------------------------------------------------
+def pick_affiliate_products(
+    topic: str,
+    wp_categories: Optional[List[int]],
+    affiliate_data: dict,
+    min_items: int = 5,
+    max_items: int = 10,
+) -> List[dict]:
+
+    if not affiliate_data:
+        return []
+
+    buckets = choose_affiliate_buckets(topic, wp_categories)
+    pool = []
+
+    for key in buckets:
+        items = affiliate_data.get(key) or []
+        for item in items:
+            if isinstance(item, dict) and item.get("url"):
+                pool.append(item)
+
+    if not pool:
+        return []
+
+    n = random.randint(min_items, max_items)
+
+    if len(pool) <= n:
+        random.shuffle(pool)
+        return pool
+
+    return random.sample(pool, n)
+
+
+# -------------------------------------------------------------------
+#  BUILD HTML SECTION FOR "RECOMMENDED PRODUCTS"
+# -------------------------------------------------------------------
+def build_affiliate_html(products: List[dict]) -> str:
+    if not products:
+        return ""
+
+    lines = ["<h2>Recommended Products</h2>", "<ul>"]
+
+    for p in products:
+        name = p.get("name", "View on Amazon")
+        url = p.get("url", "#")
+        desc = p.get("description", "")
+
+        if desc:
+            lines.append(
+                f'<li><a href="{url}" target="_blank" rel="nofollow noopener sponsored">{name}</a> – {desc}</li>'
+            )
+        else:
+            lines.append(
+                f'<li><a href="{url}" target="_blank" rel="nofollow noopener sponsored">{name}</a></li>'
+            )
+
+    lines.append("</ul>")
+    return "\n".join(lines)
+
+
+# -------------------------------------------------------------------
+#  GENERATE UNIQUE TOPIC (GPT-4o-mini)
+# -------------------------------------------------------------------
+def generate_topic(client: OpenAI) -> str:
+    prompt = (
+        "Generate ONE unique blog post idea for an outdoors/country lifestyle website. "
+        "Do NOT repeat ideas you've used before. Keep it short and clickable. No quotes."
     )
-
-    user_prompt = f"Write a full blog article on: {topic}."
-    if include_links:
-        user_prompt += (
-            "\nWeave these links naturally into the article as recommendations: "
-            + ", ".join(include_links)
-        )
 
     resp = client.chat.completions.create(
-        model=SETTINGS.OPENAI_MODEL,
-        temperature=SETTINGS.OPENAI_TEMPERATURE,
-        max_tokens=SETTINGS.OPENAI_MAX_TOKENS,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}],
     )
 
-    return (resp.choices[0].message.content or "").strip()
+    topic = resp.choices[0].message["content"].strip()
+    topic = topic.replace('"', "").replace("'", "")
+    print(f"🧠 Generated topic: {topic}")
+    return topic
 
 
-# -------------------------
-# EXCERPT BUILDER
-# -------------------------
-def _make_excerpt_from_text(text: str, limit: int = 220) -> str:
-    s = " ".join((text or "").split())
-    return (s[:limit] + "…") if len(s) > limit else s
+# -------------------------------------------------------------------
+#  CHOOSE WORDPRESS CATEGORIES FROM TOPIC
+# -------------------------------------------------------------------
+def choose_categories(topic: str) -> Optional[List[int]]:
+    t = topic.lower()
+    selected = []
+
+    if "dog" in t or "gsp" in t or "pointer" in t:
+        selected.append(CATEGORY_IDS["dogs"])
+
+    if "fish" in t:
+        selected.append(CATEGORY_IDS["fishing"])
+
+    if "camp" in t or "tent" in t or "outdoor" in t:
+        selected.append(CATEGORY_IDS["camping"])
+
+    if any(word in t for word in ["deer", "whitetail", "rut"]):
+        selected.append(CATEGORY_IDS["deer_season"])
+
+    if "hunt" in t:
+        selected.append(CATEGORY_IDS["hunting"])
+
+    if "recipe" in t or "cook" in t or "kitchen" in t:
+        selected.append(CATEGORY_IDS["recipes"])
+
+    if not selected:
+        return [CATEGORY_IDS["uncategorized"]]
+
+    return selected
 
 
-def _resolve_topic() -> tuple[str, bool, list[str] | None]:
-    parser = argparse.ArgumentParser(description="AI → WordPress publisher")
-    parser.add_argument("--topic", help="Post title/topic")
-    parser.add_argument("--force", action="store_true")
-    parser.add_argument("--include-links", default="")
-    args = parser.parse_args()
-
-    # pick up provided or env-based topic
-    topic = (args.topic or os.environ.get("TOPIC", "")).strip()
-
-    # If no topic → auto-generate one with OpenAI
-    if not topic:
-        if not SETTINGS.OPENAI_API_KEY:
-            sys.exit("No topic and no OPENAI_API_KEY; cannot auto-generate.")
-        client = OpenAI(api_key=SETTINGS.OPENAI_API_KEY)
-        resp = client.chat.completions.create(
-            model=SETTINGS.OPENAI_MODEL,
-            max_tokens=48,
-            temperature=0.7,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "Generate a single SEO-optimized blog topic for an outdoors / "
-                        "country / family lifestyle blog. Respond with ONLY the title, "
-                        "no quotes, no punctuation at the end."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": "Give me one good blogging topic for today.",
-                },
-            ],
-        )
-        topic = (resp.choices[0].message.content or "").strip()
-
-    # Process include-links
-    include_links = [
-        u.strip()
-        for u in (args.include_links or os.getenv("INCLUDE_LINKS", "")).split(",")
-        if u.strip()
-    ] or None
-
-    # Always allow posting since we generate a real topic
-    force = True or args.force
-
-    return topic, force, include_links
-
-
-# -------------------------
-# FEATURED IMAGE
-# -------------------------
-def _maybe_upload_featured_image(wp: WordPressClient, topic: str) -> Optional[int]:
-    """
-    Try Pexels/Unsplash first via image_handler; if successful, upload to WP media and
-    return the media ID. If anything fails, log and return None.
-    """
-    try:
-        img_url, alt_text, mime_type = get_featured_image_url(topic)
-        if not img_url:
-            print("⚠️ No image URL returned for topic; skipping featured image.")
-            return None
-
-        print(f"📸 Downloading featured image from: {img_url}")
-        resp = requests.get(img_url, timeout=20)
-        resp.raise_for_status()
-        image_bytes = resp.content
-
-        # Derive filename
-        filename = img_url.split("/")[-1].split("?")[0] or "featured.jpg"
-        if "." not in filename:
-            # Fallback extension based on mime_type
-            if (mime_type or "").lower() == "image/png":
-                filename += ".png"
-            else:
-                filename += ".jpg"
-
-        media_id = wp.upload_image_from_bytes(
-            image_bytes=image_bytes,
-            filename=filename,
-            mime_type=mime_type or "image/jpeg",
-            alt_text=alt_text or f"{topic.title()} photo",
-        )
-        print(f"✅ Uploaded featured image, media_id={media_id}")
-        return media_id
-
-    except Exception as e:
-        print(f"⚠️ Featured image upload failed: {e}")
-        return None
-
-
-# -------------------------
-# MAIN
-# -------------------------
+# -------------------------------------------------------------------
+#  MAIN SCRIPT
+# -------------------------------------------------------------------
 def main():
-    topic, force, include_links = _resolve_topic()
-    print(f"🧠 Using topic: {topic!r}")
+    print("🚀 Starting AI WordPress autoposter...\n")
 
-    # Prevent accidental junk posts
-    if (topic.lower() in PLACEHOLDER_TOPICS) and not force:
-        sys.exit(
-            "Refusing to post without a real TOPIC. "
-            "Use --topic 'Your Title' or env TOPIC=MyTitle. Add --force to override."
-        )
+    # Load environment variables
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+    WP_URL = os.getenv("WP_URL")
+    WP_USER = os.getenv("WP_USERNAME")
+    WP_PASS = os.getenv("WP_PASSWORD")
 
-    # Generate + normalize body
-    print("✍️ Generating article body with OpenAI…")
-    raw_body = _call_ai_to_generate_body(topic, include_links)
-    normalized_html = normalize_post_html(
-        raw_body, affiliate_domains=SETTINGS.AFFILIATE_DOMAINS
-    )
-    excerpt = _make_excerpt_from_text(raw_body)
+    if not all([OPENAI_API_KEY, WP_URL, WP_USER, WP_PASS]):
+        print("❌ Missing required environment variables.")
+        sys.exit(1)
 
-    # Initialize WP client
-    wp = WordPressClient(
-        base_url=SETTINGS.WP_BASE_URL,
-        username=SETTINGS.WP_USERNAME,
-        application_password=SETTINGS.WP_APP_PASSWORD,
-    )
-    print(f"🔌 WordPress endpoint: {wp.posts_endpoint}")
+    client = OpenAI(api_key=OPENAI_API_KEY)
 
-    # Featured image (best effort)
-    featured_media_id = _maybe_upload_featured_image(wp, topic)
+    # 1️⃣ GENERATE TOPIC
+    topic = generate_topic(client)
 
-    # Upsert by exact title
-    matches = wp.search_posts(title=topic, per_page=5)
-    match_id = next(
-        (
-            p["id"]
-            for p in matches
-            if p.get("title", {}).get("rendered", "").strip().lower()
-            == topic.lower()
-        ),
-        None,
+    # 2️⃣ GENERATE ARTICLE BODY
+    prompt = (
+        f"Write a helpful, friendly outdoor-lifestyle blog post about: {topic}. "
+        "Include tips or ideas. Around 500–800 words. Use simple language."
     )
 
-    status = os.getenv("WP_STATUS", "publish")
+    body_resp = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}],
+    )
+    html_body = body_resp.choices[0].message["content"].strip()
+    normalized_html = normalize_html(html_body)
 
-    if match_id:
-        print(f"♻️ Updating existing post id={match_id} title='{topic}'")
-        post_id = wp.update_post(
-            post_id=match_id,
-            title=topic,
-            html_content=normalized_html,
-            excerpt=excerpt,
-            status=status,
-            featured_media=featured_media_id,
-        )
-    else:
-        print(f"🆕 Creating new post title='{topic}'")
-        if getattr(SETTINGS, "DRY_RUN", False):
-            print("DRY_RUN=1 → not posting. Preview:\n", normalized_html[:800])
-            return
+    # 3️⃣ CATEGORIES
+    categories = choose_categories(topic)
+    print(f"📚 Categories selected: {categories}")
 
-        post_id = wp.create_post(
-            title=topic,
-            html_content=normalized_html,
-            excerpt=excerpt,
-            status=status,
-            featured_media=featured_media_id,
-        )
+    # 4️⃣ FEATURED IMAGE
+    featured_image_url = fetch_image_for_topic(topic)
 
-    print(f"✅ Done. Post ID: {post_id}")
+    # 5️⃣ AFFILIATE PRODUCTS
+    affiliate_data = load_affiliate_products()
+    picks = pick_affiliate_products(topic, categories, affiliate_data)
+    affiliate_html = build_affiliate_html(picks)
+
+    if affiliate_html:
+        normalized_html += "\n\n" + affiliate_html
+        print(f"🛒 Added {len(picks)} affiliate products.")
+
+    # 6️⃣ PUBLISH TO WORDPRESS
+    wp = WordpressClient(WP_URL, WP_USER, WP_PASS)
+
+    post_id = wp.create_post(
+        title=topic,
+        html_content=normalized_html,
+        excerpt="",
+        status="publish",
+        categories=categories,
+        featured_image_url=featured_image_url,
+    )
+
+    print(f"✅ Post published successfully! ID: {post_id}")
 
 
+# -------------------------------------------------------------------
+#  RUN
+# -------------------------------------------------------------------
 if __name__ == "__main__":
     main()
