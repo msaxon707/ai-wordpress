@@ -1,6 +1,6 @@
 # =========================
 # wordpress_client.py
-# CLEAN / FIXED VERSION
+# CLEAN / WITH MEDIA SUPPORT
 # =========================
 
 from dataclasses import dataclass
@@ -38,6 +38,10 @@ class WordPressClient:
     def posts_endpoint(self) -> str:
         return f"{self.base_url}/wp-json/wp/v2/posts"
 
+    @property
+    def media_endpoint(self) -> str:
+        return f"{self.base_url}/wp-json/wp/v2/media"
+
     # ----------------------
     # AUTH HEADERS
     # ----------------------
@@ -68,6 +72,45 @@ class WordPressClient:
         return resp.json()
 
     # ----------------------
+    # MEDIA UPLOAD
+    # ----------------------
+    def upload_image_from_bytes(
+        self,
+        image_bytes: bytes,
+        filename: str,
+        mime_type: str = "image/jpeg",
+        alt_text: str = "",
+    ) -> int:
+        """
+        Upload an image to WordPress and return the media ID.
+        """
+        headers = self._auth_header().copy()
+        headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+
+        files = {
+            "file": (filename, image_bytes, mime_type),
+        }
+        data: Dict[str, Any] = {}
+        if alt_text:
+            data["alt_text"] = alt_text
+            data["title"] = alt_text
+
+        resp = requests.post(
+            self.media_endpoint,
+            headers=headers,
+            files=files,
+            data=data,
+        )
+
+        if resp.status_code not in (200, 201):
+            raise RuntimeError(
+                f"WP upload_image failed: {resp.status_code} {resp.text}"
+            )
+
+        media = resp.json()
+        return int(media["id"])
+
+    # ----------------------
     # CREATE POST
     # ----------------------
     def create_post(
@@ -78,9 +121,10 @@ class WordPressClient:
         status: str = "draft",
         categories: Optional[list[int]] = None,
         tags: Optional[list[int]] = None,
+        featured_media: Optional[int] = None,
     ) -> int:
         """Create a new WordPress post."""
-        payload = {
+        payload: Dict[str, Any] = {
             "title": title,
             "content": html_content,
             "excerpt": excerpt,
@@ -91,6 +135,8 @@ class WordPressClient:
             payload["categories"] = categories
         if tags:
             payload["tags"] = tags
+        if featured_media is not None:
+            payload["featured_media"] = featured_media
 
         resp = requests.post(
             self.posts_endpoint,
@@ -117,6 +163,7 @@ class WordPressClient:
         status: Optional[str] = None,
         categories: Optional[list[int]] = None,
         tags: Optional[list[int]] = None,
+        featured_media: Optional[int] = None,
     ) -> int:
         """
         Update an existing WordPress post by ID.
@@ -136,6 +183,8 @@ class WordPressClient:
             payload["categories"] = categories
         if tags:
             payload["tags"] = tags
+        if featured_media is not None:
+            payload["featured_media"] = featured_media
 
         url = f"{self.posts_endpoint}/{post_id}"
         resp = requests.post(url, headers=self._json_headers(), data=json.dumps(payload))
