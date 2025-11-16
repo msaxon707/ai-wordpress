@@ -66,28 +66,48 @@ def _make_excerpt_from_text(text: str, limit: int = 220) -> str:
     return (s[:limit] + "…") if len(s) > limit else s
 
 
-# -------------------------
-# TOPIC RESOLUTION
-# -------------------------
-def _resolve_topic():
+def _resolve_topic() -> tuple[str, bool, list[str] | None]:
     parser = argparse.ArgumentParser(description="AI → WordPress publisher")
     parser.add_argument("--topic", help="Post title/topic")
-    parser.add_argument("--force", action="store_true", help="Allow placeholder topics")
-    parser.add_argument("--include-links", default="", help="Comma-separated URLs")
+    parser.add_argument("--force", action="store_true")
+    parser.add_argument("--include-links", default="")
     args = parser.parse_args()
 
+    # pick up provided or env-based topic
     topic = (args.topic or os.environ.get("TOPIC", "")).strip()
+
+    # If no topic → auto-generate one with OpenAI
+    if not topic:
+        client = OpenAI(api_key=SETTINGS.OPENAI_API_KEY)
+        resp = client.chat.completions.create(
+            model=SETTINGS.OPENAI_MODEL,
+            max_tokens=50,
+            temperature=0.7,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Generate a single SEO-optimized blog topic. No quotes."
+                },
+                {
+                    "role": "user",
+                    "content": "Give me a good blogging topic for today."
+                }
+            ]
+        )
+        topic = resp.choices[0].message.content.strip()
+
+    # Process include-links
     include_links = [
-        u.strip()
-        for u in (args.include_links or os.getenv("INCLUDE_LINKS", "")).split(",")
+        u.strip() for u in
+        (args.include_links or os.getenv("INCLUDE_LINKS", "")).split(",")
         if u.strip()
     ] or None
 
-    force = bool(
-        args.force or os.getenv("FORCE_POST", "").lower() in {"1", "true", "yes"}
-    )
+    # Always allow posting since we generate a real topic
+    force = True
 
     return topic, force, include_links
+
 
 
 # -------------------------
