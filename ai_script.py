@@ -7,7 +7,7 @@ import random
 from typing import Optional, List
 
 from openai import OpenAI
-from wordpress_client import WordpressClient
+from wordpress_client import WordPressClient
 from content_normalizer import normalize_html
 from image_handler import fetch_image_for_topic
 
