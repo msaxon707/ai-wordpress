@@ -1,114 +1,132 @@
-# wordpress_client.py
-# Minimal WordPress REST client with media upload support
-
-from dataclasses import dataclass
-from urllib.parse import urlparse
-from typing import Any, Dict, List, Optional
-
+import os
 import base64
+import logging
 import requests
 
+logger = logging.getLogger(__name__)
 
-@dataclass
 class WordPressClient:
-    base_url: str
-    username: str
-    application_password: str
+    """
+    A client for interacting with the WordPress REST API, including creating posts and uploading media.
+    Uses Basic Auth (username and application password) for authentication.
+    """
+    def __init__(self, base_url=None, username=None, password=None):
+        # Load connection details from environment if not provided explicitly
+        self.base_url = (base_url or os.getenv('WORDPRESS_URL', '')).rstrip('/')
+        self.username = username or os.getenv('WORDPRESS_USER')
+        self.password = password or os.getenv('WORDPRESS_PASS')
+        if not (self.base_url and self.username and self.password):
+            logger.error("WordPressClient initialization failed due to missing credentials or base_url.")
+            raise ValueError("WordPress base URL, username, or password not provided.")
+        # Prepare base API endpoint
+        if not self.base_url.endswith('/wp-json/wp/v2'):
+            # If base_url is the site root, append the REST API path
+            self.api_base = self.base_url + '/wp-json/wp/v2'
+        else:
+            self.api_base = self.base_url
+        # Initialize a session for persistent connection
+        self.session = requests.Session()
+        self.session.auth = (self.username, self.password)
+        # Set a reasonable timeout for all requests
+        self.timeout = 15
+        logger.debug(f"Initialized WordPressClient for {self.base_url}")
 
-    def __post_init__(self) -> None:
-        if not self.base_url:
-            raise ValueError("WP_URL / base_url is empty (e.g. https://thesaxonblog.com).")
-
-        raw = self.base_url.strip()
-        if not raw.startswith(("http://", "https://")):
-            raw = "https://" + raw
-
-        p = urlparse(raw)
-        scheme = p.scheme or "https"
-        host = p.netloc or p.path.split("/")[0]
-
-        if not host:
-            raise ValueError(f"WP_URL looks invalid: {self.base_url!r}")
-
-        self.base_url = f"{scheme}://{host}"
-
-    # ----------- Endpoints -----------
-
-    @property
-    def posts_endpoint(self) -> str:
-        return f"{self.base_url}/wp-json/wp/v2/posts"
-
-    @property
-    def media_endpoint(self) -> str:
-        return f"{self.base_url}/wp-json/wp/v2/media"
-
-    # ----------- Auth helpers -----------
-
-    @property
-    def _auth_header(self) -> Dict[str, str]:
-        token = f"{self.username}:{self.application_password}"
-        b64 = base64.b64encode(token.encode("utf-8")).decode("ascii")
-        return {"Authorization": f"Basic {b64}"}
-
-    # ----------- Media upload -----------
-
-    def upload_image_from_bytes(
-        self,
-        image_bytes: bytes,
-        filename: str,
-        mime_type: str = "image/jpeg",
-        alt_text: Optional[str] = None,
-    ) -> Optional[int]:
-        files = {
-            "file": (filename, image_bytes, mime_type),
+    def create_post(self, title, content, category_ids=None, featured_media_id=None, status='publish'):
+        """
+        Create a WordPress post with the given title, HTML content, category IDs, and optional featured media.
+        Returns the JSON response from WordPress if successful.
+        """
+        url = f"{self.api_base}/posts"
+        post_data = {
+            "title": title,
+            "content": content,
+            "status": status
         }
-        headers = {
-            **self._auth_header,
-            "Content-Disposition": f'attachment; filename="{filename}"',
-        }
-        data: Dict[str, Any] = {}
-        if alt_text:
-            data["alt_text"] = alt_text
-
-        resp = requests.post(self.media_endpoint, headers=headers, files=files, data=data, timeout=30)
-        if resp.status_code not in (200, 201):
-            print(f"⚠️ Failed to upload media: {resp.status_code} - {resp.text}")
+        if category_ids:
+            if isinstance(category_ids, list):
+                post_data["categories"] = category_ids
+            else:
+                post_data["categories"] = [category_ids]
+        if featured_media_id:
+            post_data["featured_media"] = featured_media_id
+        logger.info(f"Creating WordPress post '{title}'")
+        try:
+            response = self.session.post(url, json=post_data, timeout=self.timeout)
+        except requests.RequestException as e:
+            logger.error(f"Failed to create post: {e}")
             return None
+        if response.status_code not in (200, 201):
+            logger.error(f"Failed to create post. Status: {response.status_code}, Response: {response.text}")
+            return None
+        logger.info(f"Post created successfully: '{title}' (ID: {response.json().get('id')})")
+        return response.json()
 
-        media = resp.json()
-        media_id = media.get("id")
-        print(f"🖼  Media uploaded. ID={media_id}")
+    def upload_media(self, image_content, filename, alt_text=None):
+        """
+        Upload an image to WordPress media library.
+        image_content: Binary content of the image.
+        filename: Filename to use for the image on WordPress.
+        alt_text: Optional alt text for the image.
+        Returns the media ID if upload successful, otherwise None.
+        """
+        url = f"{self.api_base}/media"
+        headers = {
+            'Content-Type': 'image/jpeg',  # assuming JPEG; adjust if needed
+            'Content-Disposition': f'attachment; filename="{filename}"'
+        }
+        logger.info(f"Uploading image '{filename}' to WordPress media library")
+        try:
+            response = self.session.post(url, headers=headers, data=image_content, timeout=self.timeout)
+        except requests.RequestException as e:
+            logger.error(f"Failed to upload media: {e}")
+            return None
+        if response.status_code not in (200, 201):
+            logger.error(f"Media upload failed. Status: {response.status_code}, Response: {response.text}")
+            return None
+        media_id = response.json().get('id')
+        logger.info(f"Image uploaded successfully. Media ID: {media_id}")
+        # If alt_text provided, update the media with alt text (title and alt)
+        if media_id and alt_text:
+            media_url = f"{self.api_base}/media/{media_id}"
+            meta = {"alt_text": alt_text, "title": alt_text}
+            try:
+                self.session.post(media_url, json=meta, timeout=self.timeout)
+            except requests.RequestException as e:
+                logger.warning(f"Failed to set alt text for media {media_id}: {e}")
         return media_id
 
-    # ----------- Post creation -----------
-
-    def create_post(
-        self,
-        title: str,
-        html_content: str,
-        excerpt: str = "",
-        status: str = "publish",
-        categories: Optional[List[int]] = None,
-        featured_media: Optional[int] = None,
-    ) -> Optional[int]:
-        payload: Dict[str, Any] = {
-            "title": title,
-            "content": html_content,
-            "excerpt": excerpt or "",
-            "status": status,
-        }
-
-        if categories:
-            payload["categories"] = categories
-        if featured_media:
-            payload["featured_media"] = featured_media
-
-        resp = requests.post(self.posts_endpoint, headers=self._auth_header, json=payload, timeout=30)
-        if resp.status_code not in (200, 201):
-            print(f"⚠️ Failed to create post: {resp.status_code} - {resp.text}")
+    def get_or_create_category(self, category_name):
+        """
+        Get the WordPress category ID for the given category name. If it doesn't exist, attempt to create it.
+        Returns the category ID, or None if not found/created.
+        """
+        if not category_name:
             return None
-
-        post = resp.json()
-        post_id = post.get("id")
-        print(f"📝 Post created. ID={post_id}")
-        return post_id
+        slug = category_name.strip().lower().replace(' ', '-')
+        get_url = f"{self.api_base}/categories?slug={slug}"
+        try:
+            resp = self.session.get(get_url, timeout=self.timeout)
+        except requests.RequestException as e:
+            logger.error(f"Failed to fetch category '{category_name}': {e}")
+            return None
+        if resp.status_code == 200:
+            categories = resp.json()
+            if categories:
+                cat_id = categories[0]['id']
+                logger.debug(f"Found existing category '{category_name}' with ID {cat_id}")
+                return cat_id
+        # If not found, create the category
+        post_url = f"{self.api_base}/categories"
+        cat_data = {"name": category_name, "slug": slug}
+        try:
+            resp = self.session.post(post_url, json=cat_data, timeout=self.timeout)
+        except requests.RequestException as e:
+            logger.error(f"Failed to create category '{category_name}': {e}")
+            return None
+        if resp.status_code in (200, 201):
+            cat_id = resp.json().get('id')
+            logger.info(f"Created new WordPress category '{category_name}' (ID: {cat_id})")
+            return cat_id
+        else:
+            logger.error(f"Could not create category '{category_name}'. Status: {resp.status_code}, Response: {resp.text}")
+            return None
