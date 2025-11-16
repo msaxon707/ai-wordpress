@@ -1,296 +1,134 @@
 {
-  "hunting": [
-    {
-      "name": "Trail Camera for Deer Scouting",
-      "url": "https://www.amazon.com/s?k=trail+camera+hunting&tag=thesaxonblog01-20",
-      "description": "Great for monitoring deer movement and scouting for the season."
-    },
-    {
-      "name": "Scent Eliminator Spray",
-      "url": "https://www.amazon.com/s?k=hunting+scent+eliminator&tag=thesaxonblog01-20",
-      "description": "Helps reduce human odor when you are in the stand."
-    },
-    {
-      "name": "Adjustable Hunting Tree Stand Harness",
-      "url": "https://www.amazon.com/s?k=hunting+tree+stand+harness&tag=thesaxonblog01-20",
-      "description": "Extra safety when you are up in a tree stand for long sits."
-    },
-    {
-      "name": "Deer Drag / Game Sled",
-      "url": "https://www.amazon.com/s?k=deer+drag+sled&tag=thesaxonblog01-20",
-      "description": "Makes dragging a harvested deer out of the woods way easier."
-    },
-    {
-      "name": "Hunting Knife with Gut Hook",
-      "url": "https://www.amazon.com/s?k=hunting+knife+gut+hook&tag=thesaxonblog01-20",
-      "description": "A reliable field-dressing knife for deer and other game."
-    },
-    {
-      "name": "Insulated Hunting Bibs",
-      "url": "https://www.amazon.com/s?k=insulated+hunting+bibs&tag=thesaxonblog01-20",
-      "description": "Keeps you warm during those cold, still mornings in the stand."
-    },
-    {
-      "name": "Hearing Protection for the Range",
-      "url": "https://www.amazon.com/s?k=hunting+hearing+protection&tag=thesaxonblog01-20",
-      "description": "Protects your ears when sighting in rifles or shooting at the range."
-    }
-  ],
-
-  "deer_hunting": [
-    {
-      "name": "Deer Attractant / Mineral",
-      "url": "https://www.amazon.com/s?k=deer+attractant+block&tag=thesaxonblog01-20",
-      "description": "Helps bring deer into shooting range and keep them on your property."
-    },
-    {
-      "name": "Whitetail Deer Grunt Call",
-      "url": "https://www.amazon.com/s?k=deer+grunt+call&tag=thesaxonblog01-20",
-      "description": "Simple call that can pull curious bucks those last few yards closer."
-    },
-    {
-      "name": "Rattle Antlers / Rattling Bag",
-      "url": "https://www.amazon.com/s?k=deer+rattle+antlers&tag=thesaxonblog01-20",
-      "description": "Useful during the rut to mimic two bucks sparring."
-    },
-    {
-      "name": "Deer Drag Harness",
-      "url": "https://www.amazon.com/s?k=deer+drag+harness&tag=thesaxonblog01-20",
-      "description": "Lets you pull a deer with your whole body instead of just your arms."
-    },
-    {
-      "name": "Field Dressing Gloves Kit",
-      "url": "https://www.amazon.com/s?k=field+dressing+gloves&tag=thesaxonblog01-20",
-      "description": "Keeps things cleaner when you’re processing a deer in the field."
-    }
-  ],
-
-  "fishing": [
-    {
-      "name": "Tackle Tray Organizer",
-      "url": "https://www.amazon.com/s?k=fishing+tackle+tray&tag=thesaxonblog01-20",
-      "description": "Keeps lures and terminal tackle from turning into a tangled mess."
-    },
-    {
-      "name": "Braided Fishing Line",
-      "url": "https://www.amazon.com/s?k=braided+fishing+line&tag=thesaxonblog01-20",
-      "description": "Strong, sensitive line that is great for bass and heavy cover."
-    },
-    {
-      "name": "Multi-Species Lure Kit",
-      "url": "https://www.amazon.com/s?k=fishing+lure+kit&tag=thesaxonblog01-20",
-      "description": "A starter kit with lures that work for bass, panfish, and more."
-    },
-    {
-      "name": "Rod and Reel Combo",
-      "url": "https://www.amazon.com/s?k=spinning+rod+and+reel+combo&tag=thesaxonblog01-20",
-      "description": "Solid all-around setup for bank fishing or tossing from a jon boat."
-    },
-    {
-      "name": "Waterproof Tackle Bag",
-      "url": "https://www.amazon.com/s?k=waterproof+fishing+tackle+bag&tag=thesaxonblog01-20",
-      "description": "Keeps gear dry on rainy days or when you’re near the waterline."
-    }
-  ],
-
-  "camping": [
-    {
-      "name": "4-Person Dome Tent",
-      "url": "https://www.amazon.com/s?k=4+person+camping+tent&tag=thesaxonblog01-20",
-      "description": "Simple tent size that works well for a small family."
-    },
-    {
-      "name": "Cold Weather Sleeping Bag",
-      "url": "https://www.amazon.com/s?k=cold+weather+sleeping+bag&tag=thesaxonblog01-20",
-      "description": "Keeps you warm when temps drop overnight at camp."
-    },
-    {
-      "name": "Camping Hammock with Straps",
-      "url": "https://www.amazon.com/s?k=camping+hammock+with+straps&tag=thesaxonblog01-20",
-      "description": "Perfect for quick naps or lightweight camping trips."
-    },
-    {
-      "name": "Rechargeable Camping Lantern",
-      "url": "https://www.amazon.com/s?k=rechargeable+camping+lantern&tag=thesaxonblog01-20",
-      "description": "Throws plenty of light around the campsite without messing with fuel."
-    },
-    {
-      "name": "Camp Kitchen Utensil Set",
-      "url": "https://www.amazon.com/s?k=camp+kitchen+utensil+set&tag=thesaxonblog01-20",
-      "description": "Roll-up kit that keeps all your cooking tools in one place."
-    },
-    {
-      "name": "Portable Camping Table",
-      "url": "https://www.amazon.com/s?k=folding+camping+table&tag=thesaxonblog01-20",
-      "description": "Gives you a clean spot to prep food or play cards."
-    }
-  ],
-
-  "outdoor_cooking": [
-    {
-      "name": "Cast Iron Skillet",
-      "url": "https://www.amazon.com/s?k=cast+iron+skillet&tag=thesaxonblog01-20",
-      "description": "An absolute must-have for both indoor and campfire cooking."
-    },
-    {
-      "name": "Digital Meat Thermometer",
-      "url": "https://www.amazon.com/s?k=digital+meat+thermometer&tag=thesaxonblog01-20",
-      "description": "Takes the guesswork out of grilling steaks or smoking brisket."
-    },
-    {
-      "name": "BBQ Tool Set",
-      "url": "https://www.amazon.com/s?k=bbq+tool+set&tag=thesaxonblog01-20",
-      "description": "Spatula, tongs, and brush made to handle big cuts on the grill."
-    },
-    {
-      "name": "Pellet Grill Pellets",
-      "url": "https://www.amazon.com/s?k=pellet+grill+pellets&tag=thesaxonblog01-20",
-      "description": "Choose a wood blend to match the flavor you like best."
-    },
-    {
-      "name": "Grill Cover",
-      "url": "https://www.amazon.com/s?k=waterproof+grill+cover&tag=thesaxonblog01-20",
-      "description": "Protects your smoker or grill from rain and sun."
-    }
-  ],
-
-  "dogs_gsp": [
-    {
-      "name": "Durable Fetch Toys",
-      "url": "https://www.amazon.com/s?k=durable+dog+fetch+toy&tag=thesaxonblog01-20",
-      "description": "Toys that hold up to high-energy German Shorthaired Pointers."
-    },
-    {
-      "name": "High-Protein Dog Food",
-      "url": "https://www.amazon.com/s?k=high+protein+dog+food&tag=thesaxonblog01-20",
-      "description": "Fuel for active bird dogs that burn a lot of energy."
-    },
-    {
-      "name": "Training Treats",
-      "url": "https://www.amazon.com/s?k=small+training+dog+treats&tag=thesaxonblog01-20",
-      "description": "Perfect size for frequent rewards during obedience or field work."
-    },
-    {
-      "name": "Waterproof Dog Bed",
-      "url": "https://www.amazon.com/s?k=waterproof+outdoor+dog+bed&tag=thesaxonblog01-20",
-      "description": "Nice to throw in the truck bed or kennel for long trips."
-    },
-    {
-      "name": "GPS Tracking Collar",
-      "url": "https://www.amazon.com/s?k=gps+dog+tracking+collar&tag=thesaxonblog01-20",
-      "description": "Helps you keep tabs on your dog when they range out in the field."
-    }
-  ],
-
-  "survival_bushcraft": [
-    {
-      "name": "Bushcraft Knife",
-      "url": "https://www.amazon.com/s?k=bushcraft+knife&tag=thesaxonblog01-20",
-      "description": "A sturdy knife sized just right for carving and camp chores."
-    },
-    {
-      "name": "Ferro Rod Fire Starter",
-      "url": "https://www.amazon.com/s?k=ferro+rod+fire+starter&tag=thesaxonblog01-20",
-      "description": "Throws hot sparks even when things are damp."
-    },
-    {
-      "name": "Folding Saw",
-      "url": "https://www.amazon.com/s?k=folding+camping+saw&tag=thesaxonblog01-20",
-      "description": "Handy for cutting firewood or clearing branches."
-    },
-    {
-      "name": "Emergency Survival Kit",
-      "url": "https://www.amazon.com/s?k=outdoor+survival+kit&tag=thesaxonblog01-20",
-      "description": "Small kit with the basics for unexpected situations."
-    },
-    {
-      "name": "Paracord",
-      "url": "https://www.amazon.com/s?k=550+paracord&tag=thesaxonblog01-20",
-      "description": "Useful for shelter building, repairs, or gear lashings."
-    }
-  ],
-
-  "gifts_country_men": [
-    {
-      "name": "Insulated Work Gloves",
-      "url": "https://www.amazon.com/s?k=insulated+work+gloves&tag=thesaxonblog01-20",
-      "description": "Great for farm chores, firewood, and cold-weather hunting."
-    },
-    {
-      "name": "Rugged Bluetooth Speaker",
-      "url": "https://www.amazon.com/s?k=outdoor+bluetooth+speaker+rugged&tag=thesaxonblog01-20",
-      "description": "Perfect for the shop, barn, or tailgate."
-    },
-    {
-      "name": "Carhartt Style Beanie",
-      "url": "https://www.amazon.com/s?k=carhartt+beanie&tag=thesaxonblog01-20",
-      "description": "Simple, warm beanie that every country guy will actually wear."
-    },
-    {
-      "name": "Everyday Carry Pocket Knife",
-      "url": "https://www.amazon.com/s?k=edc+pocket+knife&tag=thesaxonblog01-20",
-      "description": "A good pocket knife is basically standard gear out in the country."
-    },
-    {
-      "name": "Double-Wall Tumbler",
-      "url": "https://www.amazon.com/s?k=insulated+stainless+steel+tumbler&tag=thesaxonblog01-20",
-      "description": "Keeps coffee hot in the morning and sweet tea cold all afternoon."
-    }
-  ],
-
-  "farmhouse_decor": [
-    {
-      "name": "Rustic Wood Wall Shelves",
-      "url": "https://www.amazon.com/s?k=farmhouse+wood+wall+shelves&tag=thesaxonblog01-20",
-      "description": "Adds storage and a simple country look to any room."
-    },
-    {
-      "name": "Farmhouse Throw Blanket",
-      "url": "https://www.amazon.com/s?k=farmhouse+throw+blanket&tag=thesaxonblog01-20",
-      "description": "Cozy blanket that looks cute tossed over the couch or bed."
-    },
-    {
-      "name": "Mason Jar Light Fixtures",
-      "url": "https://www.amazon.com/s?k=mason+jar+light+fixture&tag=thesaxonblog01-20",
-      "description": "Instant farmhouse vibe for a kitchen or hallway."
-    },
-    {
-      "name": "Farmhouse Wall Art",
-      "url": "https://www.amazon.com/s?k=farmhouse+wall+art&tag=thesaxonblog01-20",
-      "description": "Signs and prints that fit right in with country living."
-    },
-    {
-      "name": "Jute or Braided Rug",
-      "url": "https://www.amazon.com/s?k=farmhouse+braided+rug&tag=thesaxonblog01-20",
-      "description": "Softens up wood floors and adds texture."
-    }
-  ],
-
-  "kitchen_recipes": [
-    {
-      "name": "Cast Iron Dutch Oven",
-      "url": "https://www.amazon.com/s?k=cast+iron+dutch+oven&tag=thesaxonblog01-20",
-      "description": "Perfect for soups, stews, and bread in the oven or over coals."
-    },
-    {
-      "name": "Wood Cutting Board",
-      "url": "https://www.amazon.com/s?k=wood+cutting+board&tag=thesaxonblog01-20",
-      "description": "Looks nice on the counter and is gentle on knives."
-    },
-    {
-      "name": "Spice Rack Organizer",
-      "url": "https://www.amazon.com/s?k=spice+rack+organizer&tag=thesaxonblog01-20",
-      "description": "Keeps your seasonings handy when you are cooking big family meals."
-    },
-    {
-      "name": "Sheet Pan Set",
-      "url": "https://www.amazon.com/s?k=baking+sheet+pan+set&tag=thesaxonblog01-20",
-      "description": "Great for sheet pan dinners, cookies, and roasting veggies."
-    },
-    {
-      "name": "Slow Cooker",
-      "url": "https://www.amazon.com/s?k=slow+cooker&tag=thesaxonblog01-20",
-      "description": "Throw everything in before school drop-off and dinner is ready later."
-    }
-  ]
+    "hunting": [
+        {
+            "name": "Camouflage Hunting Jacket",
+            "url": "http://example.com/hunting-jacket",
+            "description": "Durable camo jacket suitable for all seasons."
+        },
+        {
+            "name": "All-Terrain Hunting Boots",
+            "url": "http://example.com/hunting-boots",
+            "description": "Waterproof boots with excellent traction."
+        },
+        {
+            "name": "Hunting Knife Set",
+            "url": "http://example.com/hunting-knife",
+            "description": "Stainless steel knives for field dressing."
+        },
+        {
+            "name": "Deer Call Device",
+            "url": "http://example.com/deer-call",
+            "description": "Electronic deer call with multiple modes."
+        },
+        {
+            "name": "Binoculars 10x50",
+            "url": "http://example.com/binoculars",
+            "description": "High-power binoculars with night vision."
+        }
+    ],
+    "fishing": [
+        {
+            "name": "Carbon Fiber Fishing Rod",
+            "url": "http://example.com/fishing-rod",
+            "description": "Lightweight rod for freshwater fishing."
+        },
+        {
+            "name": "Tackle Box Kit",
+            "url": "http://example.com/tackle-box",
+            "description": "Complete tackle kit with hooks, lures, and tools."
+        },
+        {
+            "name": "Fishing Waders",
+            "url": "http://example.com/fishing-waders",
+            "description": "Chest waders for comfortable fly fishing."
+        },
+        {
+            "name": "Electronic Fish Finder",
+            "url": "http://example.com/fish-finder",
+            "description": "Sonar fish finder with GPS mapping."
+        },
+        {
+            "name": "Sun-shield Fishing Hat",
+            "url": "http://example.com/fishing-hat",
+            "description": "Wide-brim hat with UV protection."
+        }
+    ],
+    "camping": [
+        {
+            "name": "Four-Person Camping Tent",
+            "url": "http://example.com/camping-tent",
+            "description": "Weather-resistant tent with easy setup."
+        },
+        {
+            "name": "Mummy Sleeping Bag",
+            "url": "http://example.com/sleeping-bag",
+            "description": "Insulated sleeping bag for cold weather."
+        },
+        {
+            "name": "Portable Camping Stove",
+            "url": "http://example.com/camping-stove",
+            "description": "Compact stove for outdoor cooking."
+        },
+        {
+            "name": "LED Camping Lantern",
+            "url": "http://example.com/camping-lantern",
+            "description": "Rechargeable lantern with multiple brightness settings."
+        },
+        {
+            "name": "Camping Backpack 50L",
+            "url": "http://example.com/camping-backpack",
+            "description": "High-capacity backpack with ergonomic design."
+        }
+    ],
+    "dogs": [
+        {
+            "name": "Adjustable Dog Leash",
+            "url": "http://example.com/dog-leash",
+            "description": "Nylon leash with comfortable grip."
+        },
+        {
+            "name": "Orthopedic Dog Bed",
+            "url": "http://example.com/dog-bed",
+            "description": "Memory foam bed for superior comfort."
+        },
+        {
+            "name": "Interactive Chew Toy",
+            "url": "http://example.com/chew-toy",
+            "description": "Durable chew toy that promotes dental health."
+        }
+    ],
+    "decor": [
+        {
+            "name": "Rustic Table Lamp",
+            "url": "http://example.com/rustic-lamp",
+            "description": "Wooden table lamp with vintage design."
+        },
+        {
+            "name": "Wall Art Set",
+            "url": "http://example.com/wall-art",
+            "description": "Set of 3 nature-themed canvas prints."
+        },
+        {
+            "name": "Decorative Throw Pillow",
+            "url": "http://example.com/throw-pillow",
+            "description": "Comfortable pillow with outdoor pattern."
+        }
+    ],
+    "recipes": [
+        {
+            "name": "Cast Iron Skillet Pan",
+            "url": "http://example.com/skillet",
+            "description": "Pre-seasoned skillet for campfire cooking."
+        },
+        {
+            "name": "Outdoor Grill Set",
+            "url": "http://example.com/grill-set",
+            "description": "Portable grill utensils and tools set."
+        },
+        {
+            "name": "Camping Cookbook",
+            "url": "http://example.com/camping-cookbook",
+            "description": "Recipe book full of easy outdoor meal ideas."
+        }
+    ]
 }
