@@ -36,6 +36,72 @@ def fetch_image_for_topic(topic: str) -> Tuple[Optional[str], str, str]:
 # --------------------------
 
 def fetch_from_pexels(topic: str) -> Optional[Tuple[str, str, str]]:
-    api_key = os.getenv("PEXELS_
+    api_key = os.getenv("PEXELS_API_KEY")
+    if not api_key:
+        return None
 
-                        
+    headers = {"Authorization": api_key}
+    url = "https://api.pexels.com/v1/search"
+    params = {"query": topic, "per_page": 1}
+
+    try:
+        r = requests.get(url, headers=headers, params=params, timeout=12)
+        r.raise_for_status()
+        data = r.json()
+
+        photos = data.get("photos")
+        if not photos:
+            return None
+
+        photo = photos[0]
+        image_url = photo["src"]["large"]
+        alt = photo.get("alt") or topic
+
+        return image_url, alt, "image/jpeg"
+
+    except Exception:
+        return None
+
+
+# ------------------------------
+# ⭐ UNSPLASH IMAGE PROVIDER
+# ------------------------------
+
+def fetch_from_unsplash(topic: str) -> Optional[Tuple[str, str, str]]:
+    api_key = os.getenv("UNSPLASH_ACCESS_KEY")
+    if not api_key:
+        return None
+
+    url = "https://api.unsplash.com/search/photos"
+    params = {"query": topic, "per_page": 1, "client_id": api_key}
+
+    try:
+        r = requests.get(url, params=params, timeout=12)
+        r.raise_for_status()
+        data = r.json()
+
+        results = data.get("results")
+        if not results:
+            return None
+
+        photo = results[0]
+        image_url = photo["urls"]["regular"]
+        alt = photo.get("alt_description") or topic
+
+        return image_url, alt, "image/jpeg"
+
+    except Exception:
+        return None
+
+
+# --------------------------------------------
+# 🟢 GUARANTEED FALLBACK (NEVER RETURNS NONE)
+# --------------------------------------------
+
+def fallback_placeholder(topic: str) -> Tuple[str, str, str]:
+    """
+    Always returns an image URL — even if APIs fail.
+    """
+    safe = topic.replace(" ", "+")
+    url = f"https://source.unsplash.com/featured/?{safe}"
+    return url, topic, "image/jpeg"
