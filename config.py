@@ -1,45 +1,7 @@
-import os
-from dataclasses import dataclass
-from urllib.parse import urlparse
+# ==========================
+# ai-wordpress Configuration
+# ==========================
 
-
-def _bool(env: str, default: bool = False) -> bool:
-    v = os.getenv(env)
-    if v is None:
-        return default
-    return v.strip().lower() in {"1", "true", "yes", "y", "on"}
-
-
-def _norm_base_url(raw: str | None) -> str:
-    """
-    Normalize WP_BASE_URL to clean form:
-      https://example.com
-    Ensure NO trailing slash and NO path segments.
-    """
-    if not raw:
-        raise SystemExit("Set WP_BASE_URL (e.g., https://your-site.com)")
-
-    url = raw.strip()
-
-    if not url.startswith(("http://", "https://")):
-        url = "https://" + url
-
-    parsed = urlparse(url)
-
-    if not parsed.netloc:
-        # Some hosts treat "example.com/path" as path-only — recover gracefully
-        host = parsed.path.split("/")[0]
-        if not host:
-            raise SystemExit(f"WP_BASE_URL looks invalid: {raw!r}")
-    else:
-        host = parsed.netloc
-
-    scheme = parsed.scheme or "https"
-
-    return f"{scheme}://{host}"
-
-
-@dataclass(frozen=True)
 class Settings:
     # WordPress
     WP_BASE_URL: str = _norm_base_url(os.getenv("WP_BASE_URL", ""))
@@ -50,31 +12,43 @@ class Settings:
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     OPENAI_TEMPERATURE: float = float(os.getenv("OPENAI_TEMPERATURE", "0.7"))
-    OPENAI_MAX_TOKENS: int = int(os.getenv("OPENAI_MAX_TOKENS", "1200"))
 
-    # Affiliate sanitization
-    AFFILIATE_DOMAINS: tuple[str, ...] = tuple(
-        d.strip()
-        for d in os.getenv(
-            "AFFILIATE_DOMAINS",
-            "amzn.to,amazon.com,shareasale.com,rstyle.me,impact.com"
-        ).split(",")
-        if d.strip()
-    )
+# --- General Settings ---
+RUN_MODE = "once"   # 'once' for cron-based runs
+POST_CACHE_FILE = "posted_titles.json"
+MAX_PARAGRAPHS = 8
+AFFILIATE_LINK_FREQUENCY = 3  # every 2–3 paragraphs
 
-    # Behavior flags
-    DRY_RUN: bool = _bool("DRY_RUN", False)
+# --- Affiliate ---
+AMAZON_TAG = "thesaxonblog01-20"
 
+# --- Category Mapping ---
+CATEGORY_IDS = {
+    "dogs": 11,
+    "fishing": 91,
+    "hunting": 38,
+    "outdoor_gear": 90,
+    "recipes": 54,
+    "camping": 92,
+    "deer_season": 96,
+    "uncategorized": 1,
+}
 
-SETTINGS = Settings()
+# --- Keywords for Category Detection ---
+CATEGORY_KEYWORDS = {
+    "dogs": ["dog", "retriever", "hound", "kennel"],
+    "fishing": ["fish", "angler", "rod", "bait", "lake", "bass"],
+    "hunting": ["hunt", "rifle", "bow", "deer", "turkey", "duck"],
+    "outdoor_gear": ["gear", "knife", "flashlight", "jacket", "tent"],
+    "recipes": ["recipe", "cook", "grill", "venison", "smoke", "barbecue"],
+    "camping": ["camp", "hike", "trail", "fire", "tent", "backpack"],
+    "deer_season": ["deer", "buck", "rut", "doe"],
+}
 
+# --- WordPress Posting ---
+WP_TIMEOUT = 30  # seconds for requests
+MAX_RETRIES = 3
 
-# Validate WordPress credentials cleanly
-if not SETTINGS.WP_USERNAME:
-    raise SystemExit("Missing WP_USERNAME (WordPress admin/editor username).")
-
-if not SETTINGS.WP_APP_PASSWORD:
-    raise SystemExit(
-        "Missing WP_APP_PASSWORD (WordPress application password). "
-        "Create one under Users → Profile → Application Passwords."
-    )
+# --- Logging ---
+ENABLE_LOGGING = True
+LOG_FILE = "ai_wordpress.log"
