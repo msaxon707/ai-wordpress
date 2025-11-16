@@ -1,107 +1,82 @@
-# image_handler.py
-# Always returns a usable image URL & mime type
-# Supports: Pexels (PEXELS_API_KEY), Unsplash (UNSPLASH_ACCESS_KEY)
-# Falls back to AI-generated placeholder if needed
-
 import os
+import logging
 import requests
-from typing import Optional, Tuple
 
+logger = logging.getLogger(__name__)
 
-# -----------------------------------
-# 🔍 MASTER FUNCTION CALLED BY SCRIPT
-# -----------------------------------
-
-def fetch_image_for_topic(topic: str) -> Tuple[Optional[str], str, str]:
+def search_image(topic):
     """
-    Returns: (image_url, alt_text, mime_type)
+    Search for an image related to the given topic using Pexels or Unsplash API.
+    Returns a tuple (image_content, filename, alt_text) if successful, otherwise (None, None, None).
     """
-
-    # 1) Try Pexels
-    img = fetch_from_pexels(topic)
-    if img:
-        return img
-
-    # 2) Try Unsplash
-    img = fetch_from_unsplash(topic)
-    if img:
-        return img
-
-    # 3) Fallback AI-generated placeholder (ALWAYS WORKS)
-    return fallback_placeholder(topic)
-
-
-# --------------------------
-# ⭐ PEXELS IMAGE PROVIDER
-# --------------------------
-
-def fetch_from_pexels(topic: str) -> Optional[Tuple[str, str, str]]:
-    api_key = os.getenv("PEXELS_API_KEY")
-    if not api_key:
-        return None
-
-    headers = {"Authorization": api_key}
-    url = "https://api.pexels.com/v1/search"
-    params = {"query": topic, "per_page": 1}
-
+    query = topic if topic else "outdoors"
+    # Try Pexels first if API key is available
+    pexels_api_key = os.getenv('PEXELS_API_KEY')
+    if pexels_api_key:
+        try:
+            headers = {"Authorization": pexels_api_key}
+            params = {"query": query, "per_page": 1}
+            logger.info(f"Searching Pexels for an image of '{query}'")
+            resp = requests.get("https://api.pexels.com/v1/search", headers=headers, params=params, timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                photos = data.get("photos")
+                if photos:
+                    photo = photos[0]
+                    src = photo.get("src", {})
+                    image_url = src.get("large2x") or src.get("original") or src.get("large")
+                    alt_text = photo.get("alt") or f"{topic} image"
+                    if image_url:
+                        logger.debug(f"Pexels image found: {image_url}")
+                        try:
+                            img_resp = requests.get(image_url, timeout=10)
+                            if img_resp.status_code == 200:
+                                image_content = img_resp.content
+                                filename = image_url.split('/')[-1].split('?')[0] or f"{query}.jpg"
+                                return image_content, filename, alt_text
+                        except requests.RequestException as e:
+                            logger.warning(f"Failed to download image from Pexels URL: {e}")
+            else:
+                logger.warning(f"Pexels API request failed with status {resp.status_code}: {resp.text}")
+        except requests.RequestException as e:
+            logger.error(f"Pexels API request error: {e}")
+    # Try Unsplash if Pexels didn't return an image and Unsplash key is available
+    unsplash_key = os.getenv('UNSPLASH_ACCESS_KEY')
+    if unsplash_key:
+        try:
+            logger.info(f"Searching Unsplash for an image of '{query}'")
+            params = {"query": query}
+            resp = requests.get("https://api.unsplash.com/photos/random", params=params,
+                                headers={"Authorization": f"Client-ID {unsplash_key}"}, timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                image_url = data.get("urls", {}).get("regular") or data.get("urls", {}).get("full")
+                alt_text = data.get("alt_description") or f"{topic} image"
+                if image_url:
+                    logger.debug(f"Unsplash image found: {image_url}")
+                    try:
+                        img_resp = requests.get(image_url, timeout=10)
+                        if img_resp.status_code == 200:
+                            image_content = img_resp.content
+                            filename = image_url.split('/')[-1].split('?')[0] or f"{query}.jpg"
+                            return image_content, filename, alt_text
+                    except requests.RequestException as e:
+                        logger.warning(f"Failed to download image from Unsplash URL: {e}")
+            else:
+                logger.warning(f"Unsplash API request failed with status {resp.status_code}: {resp.text}")
+        except requests.RequestException as e:
+            logger.error(f"Unsplash API request error: {e}")
+    # If no image found via APIs, use a placeholder
     try:
-        r = requests.get(url, headers=headers, params=params, timeout=12)
-        r.raise_for_status()
-        data = r.json()
-
-        photos = data.get("photos")
-        if not photos:
-            return None
-
-        photo = photos[0]
-        image_url = photo["src"]["large"]
-        alt = photo.get("alt") or topic
-
-        return image_url, alt, "image/jpeg"
-
-    except Exception:
-        return None
-
-
-# ------------------------------
-# ⭐ UNSPLASH IMAGE PROVIDER
-# ------------------------------
-
-def fetch_from_unsplash(topic: str) -> Optional[Tuple[str, str, str]]:
-    api_key = os.getenv("UNSPLASH_ACCESS_KEY")
-    if not api_key:
-        return None
-
-    url = "https://api.unsplash.com/search/photos"
-    params = {"query": topic, "per_page": 1, "client_id": api_key}
-
-    try:
-        r = requests.get(url, params=params, timeout=12)
-        r.raise_for_status()
-        data = r.json()
-
-        results = data.get("results")
-        if not results:
-            return None
-
-        photo = results[0]
-        image_url = photo["urls"]["regular"]
-        alt = photo.get("alt_description") or topic
-
-        return image_url, alt, "image/jpeg"
-
-    except Exception:
-        return None
-
-
-# --------------------------------------------
-# 🟢 GUARANTEED FALLBACK (NEVER RETURNS NONE)
-# --------------------------------------------
-
-def fallback_placeholder(topic: str) -> Tuple[str, str, str]:
-    """
-    Always returns an image URL — even if APIs fail.
-    """
-    safe = topic.replace(" ", "+")
-    url = f"https://source.unsplash.com/featured/?{safe}"
-    return url, topic, "image/jpeg"
+        placeholder_url = f"https://via.placeholder.com/1200x800.png?text={query.replace(' ', '+')}"
+        logger.info("Using placeholder image")
+        img_resp = requests.get(placeholder_url, timeout=5)
+        if img_resp.status_code == 200:
+            image_content = img_resp.content
+            filename = "placeholder.png"
+            alt_text = f"{topic} image"
+            return image_content, filename, alt_text
+    except requests.RequestException as e:
+        logger.error(f"Placeholder image request failed: {e}")
+    # If everything fails, return None
+    return None, None, None
