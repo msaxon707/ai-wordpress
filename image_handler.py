@@ -1,57 +1,41 @@
-import requests
-import random
+# image_handler.py
+# Always returns a usable image URL & mime type
+# Supports: Pexels (PEXELS_API_KEY), Unsplash (UNSPLASH_ACCESS_KEY)
+# Falls back to AI-generated placeholder if needed
+
 import os
+import requests
+from typing import Optional, Tuple
 
-PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
-UNSPLASH_ACCESS_KEY = os.getenv("UNSPLASH_ACCESS_KEY")
 
+# -----------------------------------
+# 🔍 MASTER FUNCTION CALLED BY SCRIPT
+# -----------------------------------
 
-def get_featured_image_url(topic: str):
+def fetch_image_for_topic(topic: str) -> Tuple[Optional[str], str, str]:
     """
-    Returns:
-        (image_url, alt_text, mime_type)
+    Returns: (image_url, alt_text, mime_type)
     """
-    try:
-        image_urls = []
-        mime_type = "image/jpeg"
 
-        # ------- PEXELS -------
-        if PEXELS_API_KEY:
-            pexels_url = f"https://api.pexels.com/v1/search?query={topic}&per_page=10"
-            response = requests.get(pexels_url, headers={"Authorization": PEXELS_API_KEY}, timeout=10)
+    # 1) Try Pexels
+    img = fetch_from_pexels(topic)
+    if img:
+        return img
 
-            if response.ok:
-                photos = response.json().get("photos", [])
-                for p in photos:
-                    url = p["src"].get("large") or p["src"].get("original")
-                    if url:
-                        image_urls.append((url, "image/jpeg"))
+    # 2) Try Unsplash
+    img = fetch_from_unsplash(topic)
+    if img:
+        return img
 
-        # ------- UNSPLASH -------
-        if not image_urls and UNSPLASH_ACCESS_KEY:
-            unsplash_url = f"https://api.unsplash.com/search/photos?query={topic}&per_page=10&client_id={UNSPLASH_ACCESS_KEY}"
-            response = requests.get(unsplash_url, timeout=10)
+    # 3) Fallback AI-generated placeholder (ALWAYS WORKS)
+    return fallback_placeholder(topic)
 
-            if response.ok:
-                results = response.json().get("results", [])
-                for r in results:
-                    url = r["urls"].get("regular")
-                    if url:
-                        # detect mime from url ending
-                        if url.endswith(".png"):
-                            image_urls.append((url, "image/png"))
-                        else:
-                            image_urls.append((url, "image/jpeg"))
 
-        if image_urls:
-            selected = random.choice(image_urls)
-            url, mime = selected
-            alt = f"{topic.title()} photo"
-            return url, alt, mime
+# --------------------------
+# ⭐ PEXELS IMAGE PROVIDER
+# --------------------------
 
-        print("⚠️ No image found for:", topic)
-        return None, None, None
+def fetch_from_pexels(topic: str) -> Optional[Tuple[str, str, str]]:
+    api_key = os.getenv("PEXELS_
 
-    except Exception as e:
-        print(f"❌ Image fetch error: {e}")
-        return None, None, None
+                        
