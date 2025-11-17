@@ -94,13 +94,13 @@ Make the content authentic, rich, and encourage readers to check recommended gea
 Avoid sounding like a sales pitch. Include practical insights and real-sounding field advice.
 """
 
-    log(f"Generating article for topic: {prompt_topic}")
     response = openai.ChatCompletion.create(
-        model=OPENAI_MODEL,
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=1200,
-        temperature=0.9,
-    )
+    model=OPENAI_MODEL,
+    messages=[{"role": "user", "content": prompt}],
+    max_tokens=1200,
+    temperature=1.0,
+  )
+
     return response.choices[0].message["content"]
 
 # ========== WordPress Posting ==========
