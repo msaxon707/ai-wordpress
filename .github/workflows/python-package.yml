@@ -1,0 +1,40 @@
+name: Python Code Quality
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 pylint
+
+      - name: Run syntax check (compiles every .py file)
+        run: |
+          echo "🔍 Running syntax validation..."
+          python -m compileall -f -q .
+
+      - name: Lint code with flake8
+        run: |
+          echo "🧹 Checking code style with flake8..."
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+
+      - name: Check for indentation and structure errors with pylint
+        run: |
+          echo "🧠 Running pylint..."
+          pylint --disable=C,R --exit-zero *.py
