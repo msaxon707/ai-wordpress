@@ -1,20 +1,41 @@
-from config import CATEGORY_IDS
+def detect_category(topic: str) -> int:
+    """
+    Detects the WordPress category ID based on the topic content.
+    Uses your site's category IDs:
+      dogs=11, fishing=91, hunting=38, outdoor_gear=90, recipes=54, camping=92,
+      deer_season=96, decor=93, uncategorized=1
+    """
 
-CATEGORY_KEYWORDS = {
-    "dogs": ["dog", "training", "retriever", "kennel", "hunting dog"],
-    "fishing": ["fish", "fishing", "angler", "bait", "reel"],
-    "hunting": ["hunt", "rifle", "deer", "duck", "season", "shotgun"],
-    "outdoor_gear": ["gear", "equipment", "backpack", "tools", "knife"],
-    "recipes": ["recipe", "cook", "grill", "smoke", "food", "venison"],
-    "camping": ["camp", "tent", "sleeping bag", "campfire", "hike"],
-    "deer_season": ["deer", "buck", "antlers", "rut", "stand"],
-    "uncategorized": []
-}
-
-def detect_category(topic):
-    """Detect the correct category ID based on keywords in the topic/title."""
     topic_lower = topic.lower()
-    for category, keywords in CATEGORY_KEYWORDS.items():
-        if any(keyword in topic_lower for keyword in keywords):
-            return CATEGORY_IDS.get(category, 1)
-    return CATEGORY_IDS.get("uncategorized", 1)
+
+    CATEGORY_IDS = {
+        "dogs": 11,
+        "fishing": 91,
+        "hunting": 38,
+        "outdoor_gear": 90,
+        "recipes": 54,
+        "camping": 92,
+        "deer_season": 96,
+        "decor": 93,
+        "uncategorized": 1,
+    }
+
+    # Simple keyword detection logic
+    if any(word in topic_lower for word in ["dog", "retriever", "kennel"]):
+        return CATEGORY_IDS["dogs"]
+    elif any(word in topic_lower for word in ["fish", "fishing", "bass", "trout"]):
+        return CATEGORY_IDS["fishing"]
+    elif any(word in topic_lower for word in ["hunt", "deer", "duck", "turkey"]):
+        return CATEGORY_IDS["hunting"]
+    elif any(word in topic_lower for word in ["gear", "knife", "tool", "equipment"]):
+        return CATEGORY_IDS["outdoor_gear"]
+    elif any(word in topic_lower for word in ["cook", "recipe", "food"]):
+        return CATEGORY_IDS["recipes"]
+    elif any(word in topic_lower for word in ["camp", "tent", "outdoor"]):
+        return CATEGORY_IDS["camping"]
+    elif any(word in topic_lower for word in ["season", "buck", "rut"]):
+        return CATEGORY_IDS["deer_season"]
+    elif any(word in topic_lower for word in ["decor", "farmhouse", "home", "rustic", "design", "living room", "bedroom"]):
+        return CATEGORY_IDS["decor"]
+    else:
+        return CATEGORY_IDS["uncategorized"]
