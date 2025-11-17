@@ -1,6 +1,6 @@
 # OpenAI modern SDK
 openai==0.28.1
-
+openai[datalib]
 # Networking / HTTP requests
 requests>=2.32.3
 
@@ -14,4 +14,5 @@ Markdown>=3.5.2,<3.7
 # Optional but recommended for future scaling
 python-dotenv>=1.0.1
 lxml>=5.2.1
+
 
