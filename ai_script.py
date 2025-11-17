@@ -3,6 +3,7 @@ import json
 import random
 import requests
 import openai
+import markdown
 from datetime import datetime
 from config import (
     OPENAI_API_KEY,
@@ -128,7 +129,12 @@ def main():
         return
 
     # Step 3: Inject affiliate links inline
-    article_with_links = inject_affiliate_links(article, products)
+    # Convert Markdown-style text to HTML
+    article_html = markdown.markdown(article)
+
+   # Then inject affiliate links into the HTML version
+    article_with_links = inject_affiliate_links(article_html, products)
+
 
     # Step 4: Detect category
     category_id = detect_category(title, article_with_links)
