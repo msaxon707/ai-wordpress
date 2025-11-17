@@ -47,18 +47,42 @@ def detect_category(title, content):
 
 # ========== AI Content Generation ==========
 
+import random
+
 def generate_topic():
-    """Generate an SEO-optimized topic related to outdoors/hunting."""
-    topics = [
-        "hunting gear reviews",
-        "country lifestyle tips",
-        "camping essentials",
-        "fishing strategies",
-        "deer season preparation",
-        "outdoor cooking recipes",
+    """Generate diverse SEO-driven outdoor topics."""
+    base_topics = [
+        "hunting gear",
+        "country lifestyle",
+        "camping",
+        "fishing",
+        "deer season",
+        "outdoor cooking",
         "dog training for hunting",
+        "backcountry survival",
+        "off-grid living",
+        "rural DIY projects",
+        "wildlife photography",
+        "homesteading gear",
+        "bushcraft skills",
+        "trail food and meal prep",
     ]
-    return random.choice(topics)
+
+    # Randomly combine one base + one SEO keyword
+    modifiers = [
+        "tips",
+        "essentials",
+        "mistakes to avoid",
+        "gear review",
+        "guide for beginners",
+        "on a budget",
+        "for families",
+        "like a pro",
+        "every outdoorsman should know",
+    ]
+
+    return f"{random.choice(base_topics)} {random.choice(modifiers)}"
+
 
 def generate_article(prompt_topic):
     """Generate SEO article using OpenAI GPT model."""
