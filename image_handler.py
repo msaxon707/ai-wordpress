@@ -1,73 +1,68 @@
+import os
 import requests
 import random
-import io
-from config import PEXELS_API_KEY, WP_BASE_URL, WP_USERNAME, WP_APP_PASSWORD, ENABLE_LOGGING
+from wordpress_client import WordPressClient
 
-def log(msg):
-    if ENABLE_LOGGING:
-        print(f"[ImageHandler] {msg}")
+PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
+UNSPLASH_ACCESS_KEY = os.getenv("UNSPLASH_ACCESS_KEY")
 
-def get_pexels_image_url(query):
-    """
-    Searches Pexels for an image matching the query.
-    Returns the URL of a random image result.
-    """
+
+def get_pexels_image(query):
+    """Fetches an image from Pexels based on the query."""
     headers = {"Authorization": PEXELS_API_KEY}
-    params = {"query": query or "outdoor hunting", "per_page": 10}
-    response = requests.get("https://api.pexels.com/v1/search", headers=headers, params=params)
-
-    if response.status_code != 200:
-        log(f"Pexels API error: {response.status_code}")
+    url = f"https://api.pexels.com/v1/search?query={query}&per_page=10"
+    try:
+        r = requests.get(url, headers=headers, timeout=10)
+        if r.status_code == 200 and r.json().get("photos"):
+            photos = r.json()["photos"]
+            photo = random.choice(photos)
+            return photo["src"]["large"]
+        else:
+            print(f"[ImageHandler] No Pexels images found for query: {query}")
+            return None
+    except Exception as e:
+        print(f"[ImageHandler] Pexels API error: {e}")
         return None
 
-    data = response.json()
-    photos = data.get("photos", [])
-    if not photos:
-        log("No Pexels images found for query.")
+
+def get_unsplash_image(query):
+    """Fetches an image from Unsplash based on the query."""
+    url = f"https://api.unsplash.com/search/photos?query={query}&per_page=10&client_id={UNSPLASH_ACCESS_KEY}"
+    try:
+        r = requests.get(url, timeout=10)
+        if r.status_code == 200 and r.json().get("results"):
+            photos = r.json()["results"]
+            photo = random.choice(photos)
+            return photo["urls"]["regular"]
+        else:
+            print(f"[ImageHandler] No Unsplash images found for query: {query}")
+            return None
+    except Exception as e:
+        print(f"[ImageHandler] Unsplash API error: {e}")
         return None
 
-    chosen = random.choice(photos)
-    return chosen["src"].get("original")
 
-def upload_to_wordpress(image_url, title):
+def get_featured_image_id(topic):
     """
-    Uploads an image from URL to WordPress Media Library.
-    Returns media ID if successful.
+    Fetches and uploads a featured image for the given topic.
+    Tries Pexels first, then Unsplash as a fallback.
     """
-    log(f"Uploading featured image for: {title}")
-
-    img_data = requests.get(image_url).content
-    filename = f"{title.replace(' ', '_')}.jpg"
-
-    media_url = f"{WP_BASE_URL}/wp-json/wp/v2/media"
-    headers = {
-        "Content-Disposition": f'attachment; filename="{filename}"',
-        "Content-Type": "image/jpeg",
-    }
-
-    response = requests.post(
-        media_url,
-        headers=headers,
-        data=img_data,
-        auth=(WP_USERNAME, WP_APP_PASSWORD),
-    )
-
-    if response.status_code not in [200, 201]:
-        log(f"Failed to upload image: {response.status_code}, {response.text}")
+    print(f"[ImageHandler] Uploading featured image for: {topic}")
+    image_url = get_pexels_image(topic) or get_unsplash_image(topic)
+    if not image_url:
+        print("[ImageHandler] ❌ No image URL found, skipping featured image.")
         return None
 
-    media_id = response.json().get("id")
-    log(f"Image uploaded successfully. Media ID: {media_id}")
-    return media_id
-
-def get_featured_image_id(title):
-    """
-    Complete pipeline: fetch from Pexels → upload to WP → return media ID.
-    """
-    search_term = title.split(":")[0].split(" ")[0]  # basic keyword for image
-    img_url = get_pexels_image_url(search_term)
-    if not img_url:
-        log("No image URL found, skipping featured image.")
+    try:
+        image_bytes = requests.get(image_url, timeout=10).content
+        filename = topic.replace(" ", "_")[:40] + ".jpg"
+        client = WordPressClient()
+        media_id = client.upload_media(image_bytes, filename, alt_text=topic)
+        if media_id:
+            print(f"[ImageHandler] ✅ Image uploaded successfully. Media ID: {media_id}")
+        else:
+            print("[ImageHandler] ❌ Failed to upload image to WordPress.")
+        return media_id
+    except Exception as e:
+        print(f"[ImageHandler] ❌ Image upload failed: {e}")
         return None
-
-    return upload_to_wordpress(img_url, title)
