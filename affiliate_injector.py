@@ -67,13 +67,13 @@ def inject_affiliate_links(content, products):
     injected = []
     counter = 0
 
-    for paragraph in paragraphs:
-        injected.append(paragraph)
-        if not paragraph.strip():
-            continue
+for paragraph in paragraphs:
+    injected.append(paragraph)
+    if not paragraph.strip():
+        continue
 
-        counter += 1
-        if counter % AFFILIATE_LINK_FREQUENCY == 0:
+    counter += 1
+    if counter % AFFILIATE_LINK_FREQUENCY == 0:
         relevant_products = match_products_to_text(paragraph, products)
 
         # ✅ Prevent empty sequence crash
@@ -84,6 +84,7 @@ def inject_affiliate_links(content, products):
         product = random.choice(relevant_products)
         product_name = product.get("name", "View Product")
         product_url = build_affiliate_link(product.get("url", "#"))
+
 
          if verify_amazon_link(product_url):
                 anchor_text = choose_anchor_text()
