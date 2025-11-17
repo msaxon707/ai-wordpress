@@ -74,20 +74,16 @@ def inject_affiliate_links(content, products):
 
         counter += 1
         if counter % AFFILIATE_LINK_FREQUENCY == 0:
-            relevant_products = match_products_to_text(paragraph, products)
+        relevant_products = match_products_to_text(paragraph, products)
 
-            # ✅ Prevent empty sequence crash
+        # ✅ Prevent empty sequence crash
         if not relevant_products:
+            print("[INFO] No relevant product match — using fallback list.")
             relevant_products = products  # fallback to full product list
 
-            product = random.choice(relevant_products)
-
-            product_name = product.get("name", "View Product")
-            product_url = build_affiliate_link(product.get("url", "#"))
-         if not relevant_products:
-            print("[INFO] No relevant product match — using fallback list.")
-            relevant_products = products
-
+        product = random.choice(relevant_products)
+        product_name = product.get("name", "View Product")
+        product_url = build_affiliate_link(product.get("url", "#"))
 
          if verify_amazon_link(product_url):
                 anchor_text = choose_anchor_text()
