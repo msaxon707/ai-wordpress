@@ -87,23 +87,43 @@ def generate_topic():
 
 
 def generate_article(prompt_topic):
-    """Generate SEO article using OpenAI GPT model."""
+    """Generate SEO article using OpenAI GPT model and auto-inject affiliate links."""
+    import openai
+    from ai_product_recommender import generate_product_suggestions, create_amazon_links
+    from affiliate_injector import load_affiliate_products, inject_affiliate_links
+
     openai.api_key = OPENAI_API_KEY
     prompt = f"""
-You are a seasoned outdoors writer who creates SEO-optimized, persuasive, story-driven articles.
-Focus on topics related to {prompt_topic}.
-Make the content authentic, rich, and encourage readers to check recommended gear naturally.
-Avoid sounding like a sales pitch. Include practical insights and real-sounding field advice.
-"""
+    You are a seasoned outdoors writer who creates SEO-optimized, persuasive, story-driven articles.
+    Focus on topics related to {prompt_topic}.
+    Make the content authentic, rich, and encourage readers to check recommended gear naturally.
+    Avoid sounding like a sales pitch. Include practical insights and real-sounding field advice.
+    """
 
     response = openai.ChatCompletion.create(
-    model=OPENAI_MODEL,
-    messages=[{"role": "user", "content": prompt}],
-    max_tokens=1200,
-    temperature=1.0,
-  )
+        model=OPENAI_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=1200,
+        temperature=1.0,
+    )
 
-    return response.choices[0].message["content"]
+    article_text = response.choices[0].message["content"]
+
+    # ====== AI Product Recommender Integration ======
+    # 1️⃣ Generate AI-based product suggestions from the article text
+    product_names = generate_product_suggestions(article_text)
+    dynamic_products = create_amazon_links(product_names)
+
+    # 2️⃣ Load your static affiliate backup list (hybrid mode)
+    static_products = load_affiliate_products()
+
+    # 3️⃣ Merge them for the injector
+    all_products = dynamic_products + static_products
+
+    # 4️⃣ Inject contextual affiliate links into the article
+    article_with_links = inject_affiliate_links(article_text, all_products)
+
+    return article_with_links
 
 article_text = response.choices[0].message["content"]
 
