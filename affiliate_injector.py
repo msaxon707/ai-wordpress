@@ -41,6 +41,17 @@ def choose_anchor_text():
     ]
     return random.choice(options)
 
+import requests
+
+def verify_amazon_link(url):
+    """Return True if Amazon link is live."""
+    try:
+        r = requests.head(url, allow_redirects=True, timeout=5)
+        return r.status_code == 200
+    except requests.RequestException:
+        return False
+
+
 def inject_affiliate_links(content, products):
     """
     Inserts affiliate links inline every few paragraphs.
