@@ -1,6 +1,6 @@
 import os
 import sys
-import openai
+from openai import OpenAI
 from config import OPENAI_MODEL
 from ai_product_recommender import generate_product_suggestions, create_amazon_links
 from affiliate_injector import inject_affiliate_links
@@ -10,9 +10,8 @@ from topic_generator import generate_topic
 from category_detector import detect_category
 from content_normalizer import normalize_content
 
-# Load keys from environment
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-openai.api_key = OPENAI_API_KEY
+# Initialize OpenAI client
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
 def generate_article(prompt_topic):
@@ -29,18 +28,17 @@ def generate_article(prompt_topic):
     """
 
     try:
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=1200,
             temperature=1.0,
-            timeout=60
         )
     except Exception as e:
         print(f"[ERROR] OpenAI request failed: {e}")
         sys.exit(1)
 
-    article_html = response.choices[0].message["content"].strip()
+    article_html = response.choices[0].message.content.strip()
     return normalize_content(article_html)
 
 
