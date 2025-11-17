@@ -103,6 +103,10 @@ class WordPressClient:
         if not category_name:
             return None
 
+        # If already an integer ID, return it directly
+        if isinstance(category_name, int):
+            return category_name
+
         slug = category_name.strip().lower().replace(" ", "-")
         get_url = f"{self.api_base}/categories?slug={slug}"
 
@@ -142,13 +146,16 @@ def post_to_wordpress(title, content, categories=None, image_bytes=None, image_f
     if image_bytes and image_filename:
         media_id = client.upload_media(image_bytes, image_filename, alt_text=title)
 
-    # Get category IDs
+    # ✅ Handle both category names and IDs safely
     category_ids = []
     if categories:
         for c in categories:
-            cat_id = client.get_or_create_category(c)
-            if cat_id:
-                category_ids.append(cat_id)
+            if isinstance(c, int):
+                category_ids.append(c)
+            else:
+                cat_id = client.get_or_create_category(c)
+                if cat_id:
+                    category_ids.append(cat_id)
 
     # Create the post
     return client.create_post(title, content, category_ids, featured_media_id=media_id)
