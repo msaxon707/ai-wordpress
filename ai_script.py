@@ -40,6 +40,41 @@ def generate_article(prompt_topic):
 
     article_html = response.choices[0].message.content.strip()
     return normalize_content(article_html)
+    def generate_seo_metadata(article_text, topic):
+    """Generate an SEO title and meta description using OpenAI."""
+    from openai import OpenAI
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+    prompt = f"""
+    Analyze this blog article and craft:
+    1. A catchy SEO title (≤60 characters) that includes the keyword "{topic}".
+    2. A concise meta description (≤160 characters) that will improve Google CTR.
+
+    Return output in JSON:
+    {{
+      "title": "SEO title here",
+      "description": "meta description here"
+    }}
+
+    ARTICLE:
+    {article_text[:2500]}
+    """
+
+    try:
+        response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            max_tokens=200
+        )
+        import json
+        raw = response.choices[0].message.content
+        seo = json.loads(raw)
+        return seo.get("title", topic), seo.get("description", "")
+    except Exception as e:
+        print(f"[WARN] SEO metadata generation failed: {e}")
+        return topic, ""
+
 
 
 def main():
