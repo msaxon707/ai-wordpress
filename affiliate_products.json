@@ -1,134 +1,62 @@
-{
-    "hunting": [
-        {
-            "name": "Camouflage Hunting Jacket",
-            "url": "http://example.com/hunting-jacket",
-            "description": "Durable camo jacket suitable for all seasons."
-        },
-        {
-            "name": "All-Terrain Hunting Boots",
-            "url": "http://example.com/hunting-boots",
-            "description": "Waterproof boots with excellent traction."
-        },
-        {
-            "name": "Hunting Knife Set",
-            "url": "http://example.com/hunting-knife",
-            "description": "Stainless steel knives for field dressing."
-        },
-        {
-            "name": "Deer Call Device",
-            "url": "http://example.com/deer-call",
-            "description": "Electronic deer call with multiple modes."
-        },
-        {
-            "name": "Binoculars 10x50",
-            "url": "http://example.com/binoculars",
-            "description": "High-power binoculars with night vision."
-        }
-    ],
-    "fishing": [
-        {
-            "name": "Carbon Fiber Fishing Rod",
-            "url": "http://example.com/fishing-rod",
-            "description": "Lightweight rod for freshwater fishing."
-        },
-        {
-            "name": "Tackle Box Kit",
-            "url": "http://example.com/tackle-box",
-            "description": "Complete tackle kit with hooks, lures, and tools."
-        },
-        {
-            "name": "Fishing Waders",
-            "url": "http://example.com/fishing-waders",
-            "description": "Chest waders for comfortable fly fishing."
-        },
-        {
-            "name": "Electronic Fish Finder",
-            "url": "http://example.com/fish-finder",
-            "description": "Sonar fish finder with GPS mapping."
-        },
-        {
-            "name": "Sun-shield Fishing Hat",
-            "url": "http://example.com/fishing-hat",
-            "description": "Wide-brim hat with UV protection."
-        }
-    ],
-    "camping": [
-        {
-            "name": "Four-Person Camping Tent",
-            "url": "http://example.com/camping-tent",
-            "description": "Weather-resistant tent with easy setup."
-        },
-        {
-            "name": "Mummy Sleeping Bag",
-            "url": "http://example.com/sleeping-bag",
-            "description": "Insulated sleeping bag for cold weather."
-        },
-        {
-            "name": "Portable Camping Stove",
-            "url": "http://example.com/camping-stove",
-            "description": "Compact stove for outdoor cooking."
-        },
-        {
-            "name": "LED Camping Lantern",
-            "url": "http://example.com/camping-lantern",
-            "description": "Rechargeable lantern with multiple brightness settings."
-        },
-        {
-            "name": "Camping Backpack 50L",
-            "url": "http://example.com/camping-backpack",
-            "description": "High-capacity backpack with ergonomic design."
-        }
-    ],
-    "dogs": [
-        {
-            "name": "Adjustable Dog Leash",
-            "url": "http://example.com/dog-leash",
-            "description": "Nylon leash with comfortable grip."
-        },
-        {
-            "name": "Orthopedic Dog Bed",
-            "url": "http://example.com/dog-bed",
-            "description": "Memory foam bed for superior comfort."
-        },
-        {
-            "name": "Interactive Chew Toy",
-            "url": "http://example.com/chew-toy",
-            "description": "Durable chew toy that promotes dental health."
-        }
-    ],
-    "decor": [
-        {
-            "name": "Rustic Table Lamp",
-            "url": "http://example.com/rustic-lamp",
-            "description": "Wooden table lamp with vintage design."
-        },
-        {
-            "name": "Wall Art Set",
-            "url": "http://example.com/wall-art",
-            "description": "Set of 3 nature-themed canvas prints."
-        },
-        {
-            "name": "Decorative Throw Pillow",
-            "url": "http://example.com/throw-pillow",
-            "description": "Comfortable pillow with outdoor pattern."
-        }
-    ],
-    "recipes": [
-        {
-            "name": "Cast Iron Skillet Pan",
-            "url": "http://example.com/skillet",
-            "description": "Pre-seasoned skillet for campfire cooking."
-        },
-        {
-            "name": "Outdoor Grill Set",
-            "url": "http://example.com/grill-set",
-            "description": "Portable grill utensils and tools set."
-        },
-        {
-            "name": "Camping Cookbook",
-            "url": "http://example.com/camping-cookbook",
-            "description": "Recipe book full of easy outdoor meal ideas."
-        }
-    ]
-}
+[
+  {
+    "name": "Vortex Optics Crossfire HD Binoculars",
+    "url": "https://www.amazon.com/dp/B07P7VRV7C?tag=thesaxonblog01-20"
+  },
+  {
+    "name": "Scent Crusher Ozone Gear Bag",
+    "url": "https://www.amazon.com/dp/B01N0D8W7T?tag=thesaxonblog01-20"
+  },
+  {
+    "name": "YETI Rambler 20 oz Tumbler",
+    "url": "https://www.amazon.com/dp/B01ACEJK8C?tag=thesaxonblog01-20"
+  },
+  {
+    "name": "Muddy Outdoors Safety Harness",
+    "url": "https://www.amazon.com/dp/B00OZ0CE7O?tag=thesaxonblog01-20"
+  },
+  {
+    "name": "Garmin GPSMAP 66i Handheld GPS",
+    "url": "https://www.amazon.com/dp/B07RQ8PSW7?tag=thesaxonblog01-20"
+  },
+  {
+    "name": "Primos Hunting The Original Can Deer Call",
+    "url": "https://www.amazon.com/dp/B0002YTF0E?tag=thesaxonblog01-20"
+  },
+  {
+    "name": "Leatherman Wave Plus Multitool",
+    "url": "https://www.amazon.com/dp/B07YVL8SF8?tag=thesaxonblog01-20"
+  },
+  {
+    "name": "Gerber StrongArm Fixed Blade Knife",
+    "url": "https://www.amazon.com/dp/B00U0ILXGC?tag=thesaxonblog01-20"
+  },
+  {
+    "name": "Sitka Gear Mountain Jacket",
+    "url": "https://www.amazon.com/dp/B07DYFWR74?tag=thesaxonblog01-20"
+  },
+  {
+    "name": "Bushnell Trophy TRS-25 Red Dot Sight",
+    "url": "https://www.amazon.com/dp/B00200E0HM?tag=thesaxonblog01-20"
+  },
+  {
+    "name": "Thermacell MR450 Portable Mosquito Repeller",
+    "url": "https://www.amazon.com/dp/B01BGHU7R8?tag=thesaxonblog01-20"
+  },
+  {
+    "name": "Coleman 4-Person Dome Tent",
+    "url": "https://www.amazon.com/dp/B004J2GUOU?tag=thesaxonblog01-20"
+  },
+  {
+    "name": "Stanley Classic Legendary Bottle 1.5qt",
+    "url": "https://www.amazon.com/dp/B07X4XY4XL?tag=thesaxonblog01-20"
+  },
+  {
+    "name": "TETON Sports Celsius XXL Sleeping Bag",
+    "url": "https://www.amazon.com/dp/B001D1M7Z4?tag=thesaxonblog01-20"
+  },
+  {
+    "name": "Energizer Tactical Flashlight 700 Lumens",
+    "url": "https://www.amazon.com/dp/B07P5T7T1W?tag=thesaxonblog01-20"
+  }
+]
