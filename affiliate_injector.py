@@ -41,7 +41,7 @@ def inject_affiliate_links(content, products):
     if not products:
         return content
 
-    paragraphs = re.split(r'(\n\s*\n)', content)  # split but keep paragraph breaks
+    paragraphs = re.split(r'(?:\n{1,}|</p>)', content)  # split but keep paragraph breaks
     injected = []
     paragraph_counter = 0
 
