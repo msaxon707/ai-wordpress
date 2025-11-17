@@ -30,15 +30,48 @@ def build_affiliate_link(product_url):
     new_query = urlencode(query)
     return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, new_query, parsed.fragment))
 
+import openai
+import os
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+openai.api_key = OPENAI_API_KEY
 
 def match_products_to_text(text, products):
-    """Find products whose tags match keywords in the text."""
+    """Use semantic similarity to find products that best match the paragraph context."""
     text_lower = text.lower()
+
+    # Quick keyword-based filter first
     matched = [
         p for p in products
         if any(tag.lower() in text_lower for tag in p.get("tags", []))
     ]
+
+    # If no keyword match, use semantic fallback
+    if not matched:
+        try:
+            response = openai.Embedding.create(
+                model="text-embedding-3-small",
+                input=text_lower,
+            )
+            text_vector = response['data'][0]['embedding']
+
+            # Simple semantic scoring by overlapping tags and description
+            def relevance_score(prod):
+                desc = " ".join(prod.get("tags", [])) + " " + prod.get("name", "")
+                resp = openai.Embedding.create(model="text-embedding-3-small", input=desc)
+                prod_vector = resp['data'][0]['embedding']
+                # cosine similarity simplified
+                dot = sum(a*b for a, b in zip(text_vector, prod_vector))
+                return dot
+
+            ranked = sorted(products, key=relevance_score, reverse=True)
+            return ranked[:5]  # top 5 most relevant products
+        except Exception as e:
+            print(f"[WARN] Semantic match fallback failed: {e}")
+            return []
+
     return matched
+
 
 
 def choose_anchor_text():
