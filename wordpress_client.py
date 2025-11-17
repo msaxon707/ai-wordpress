@@ -130,3 +130,18 @@ class WordPressClient:
         else:
             logger.error(f"Could not create category '{category_name}'. Status: {resp.status_code}, Response: {resp.text}")
             return None
+# helper to keep backward compatibility with older scripts
+def post_to_wordpress(title, content, category_id=None, featured_image_id=None):
+    """
+    Convenience wrapper for WordPressClient.create_post().
+    Pulls credentials and base URL from environment variables.
+    """
+    client = WordPressClient()
+    return client.create_post(
+        title=title,
+        content=content,
+        category_ids=category_id,
+        featured_media_id=featured_image_id,
+        status="publish",
+    )
+            
