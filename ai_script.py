@@ -30,7 +30,7 @@ def generate_article(prompt_topic):
         temperature=1.0,
     )
 
-    article_text = response.choices[0].message["content"]
+    article_text = response.choices[0].message["content"].strip()
 
     # === AI Product Recommender Integration ===
     product_names = generate_product_suggestions(article_text)
@@ -58,20 +58,20 @@ def main():
     # 2️⃣ Generate AI article content
     article = generate_article(topic)
 
-    # 3️⃣ Detect WordPress category from topic
+    # 3️⃣ Detect WordPress category ID
     category_id = detect_category(topic)
     print(f"[ai_script] Detected category ID: {category_id}")
 
-    # 4️⃣ Get featured image
+    # 4️⃣ Fetch featured image
     featured_image_id = get_featured_image_id(topic)
 
-    # 5️⃣ Publish post to WordPress (✅ fixed parameter)
+    # 5️⃣ Post to WordPress
     post_id = post_to_wordpress(
         title=topic,
         content=article,
-        categories=[category_id],  # fixed: must be list
-        image_bytes=None,          # placeholder; your image handler handles upload if needed
-        image_filename=None        # placeholder
+        categories=[category_id],      # IDs passed as list
+        image_bytes=None,              # image already uploaded separately
+        image_filename=None
     )
 
     if post_id:
