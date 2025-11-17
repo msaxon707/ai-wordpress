@@ -1,22 +1,52 @@
 [
-  {"name": "Vortex Optics Diamondback HD Binoculars",
-   "url": "https://www.amazon.com/dp/B07Y1TQB89?tag=thesaxonblog01-20"},
-  {"name": "Leupold RX-1400i TBR/W Rangefinder",
-   "url": "https://www.amazon.com/dp/B08WMLX4WG?tag=thesaxonblog01-20"},
-  {"name": "Primos Hunting The Can Deer Call",
-   "url": "https://www.amazon.com/dp/B0002YTF0E?tag=thesaxonblog01-20"},
-  {"name": "Sitka Gear Jetstream Jacket",
-   "url": "https://www.amazon.com/dp/B08QZZMZ3K?tag=thesaxonblog01-20"},
-  {"name": "YETI Rambler 20 oz Tumbler",
-   "url": "https://www.amazon.com/dp/B07Q5VHB9Z?tag=thesaxonblog01-20"},
-  {"name": "Thermacell MR450 Portable Mosquito Repeller",
-   "url": "https://www.amazon.com/dp/B01BGHU7R8?tag=thesaxonblog01-20"},
-  {"name": "Gerber StrongArm Fixed Blade Knife",
-   "url": "https://www.amazon.com/dp/B00U0ILXGC?tag=thesaxonblog01-20"},
-  {"name": "Bushnell Trophy TRS-25 Red Dot Sight",
-   "url": "https://www.amazon.com/dp/B00200E0HM?tag=thesaxonblog01-20"},
-  {"name": "TETON Sports Celsius XXL Sleeping Bag",
-   "url": "https://www.amazon.com/dp/B001D1M7Z4?tag=thesaxonblog01-20"},
-  {"name": "Coleman 4-Person Dome Tent",
-   "url": "https://www.amazon.com/dp/B004J2GUOU?tag=thesaxonblog01-20"}
+  {
+    "name": "Vortex Optics Diamondback HD Binoculars",
+    "url": "https://www.amazon.com/dp/B07Y1TQB89?tag=thesaxonblog01-20",
+    "tags": ["hunting", "deer", "scouting", "outdoor_gear"]
+  },
+  {
+    "name": "Leupold RX-1400i TBR/W Rangefinder",
+    "url": "https://www.amazon.com/dp/B08WMLX4WG?tag=thesaxonblog01-20",
+    "tags": ["hunting", "rifle", "deer", "optics"]
+  },
+  {
+    "name": "Primos Hunting The Can Deer Call",
+    "url": "https://www.amazon.com/dp/B0002YTF0E?tag=thesaxonblog01-20",
+    "tags": ["deer", "hunting", "calling"]
+  },
+  {
+    "name": "Sitka Gear Jetstream Jacket",
+    "url": "https://www.amazon.com/dp/B08QZZMZ3K?tag=thesaxonblog01-20",
+    "tags": ["hunting", "outdoor_gear", "apparel"]
+  },
+  {
+    "name": "YETI Rambler 20 oz Tumbler",
+    "url": "https://www.amazon.com/dp/B07Q5VHB9Z?tag=thesaxonblog01-20",
+    "tags": ["camping", "outdoors", "country_living"]
+  },
+  {
+    "name": "Thermacell MR450 Portable Mosquito Repeller",
+    "url": "https://www.amazon.com/dp/B01BGHU7R8?tag=thesaxonblog01-20",
+    "tags": ["camping", "outdoors", "fishing", "hunting"]
+  },
+  {
+    "name": "Gerber StrongArm Fixed Blade Knife",
+    "url": "https://www.amazon.com/dp/B00U0ILXGC?tag=thesaxonblog01-20",
+    "tags": ["camping", "survival", "hunting"]
+  },
+  {
+    "name": "Bushnell Trophy TRS-25 Red Dot Sight",
+    "url": "https://www.amazon.com/dp/B00200E0HM?tag=thesaxonblog01-20",
+    "tags": ["hunting", "rifle", "optics"]
+  },
+  {
+    "name": "TETON Sports Celsius XXL Sleeping Bag",
+    "url": "https://www.amazon.com/dp/B001D1M7Z4?tag=thesaxonblog01-20",
+    "tags": ["camping", "outdoor_gear", "cold_weather"]
+  },
+  {
+    "name": "Coleman 4-Person Dome Tent",
+    "url": "https://www.amazon.com/dp/B004J2GUOU?tag=thesaxonblog01-20",
+    "tags": ["camping", "family", "outdoor_gear"]
+  }
 ]
