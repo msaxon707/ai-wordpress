@@ -16,11 +16,18 @@ def load_affiliate_products(file_path="affiliate_products.json"):
         return []
 
 def build_affiliate_link(url):
-    """Append Amazon affiliate tag if not already present."""
-    if "amazon.com" in url:
-        sep = "&" if "?" in url else "?"
-        return f"{url}{sep}tag={AMAZON_TAG}"
-    return url
+    """Cleanly append or replace Amazon affiliate tag."""
+    if "amazon.com" not in url:
+        return url
+
+    # Remove any existing tag parameter to prevent duplication
+    import urllib.parse as up
+    parsed = up.urlparse(url)
+    q = dict(up.parse_qsl(parsed.query))
+    q["tag"] = AMAZON_TAG
+    clean_url = up.urlunparse(parsed._replace(query=up.urlencode(q)))
+    return clean_url
+
 
 def choose_anchor_text():
     """Randomized call-to-action text for link variation."""
