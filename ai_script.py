@@ -1,5 +1,3 @@
-# ai_script.py
-
 import os
 import openai
 from config import OPENAI_MODEL
@@ -12,6 +10,7 @@ from category_detector import detect_category
 
 # Load environment keys from Coolify
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
 
 def generate_article(prompt_topic):
     """Generate SEO article using OpenAI GPT model and auto-inject affiliate links."""
@@ -51,22 +50,35 @@ def generate_article(prompt_topic):
 
 def main():
     print("[ai_script] === AI WordPress Post Generation Started ===")
+
+    # 1️⃣ Generate a topic
     topic = generate_topic()
     print(f"[ai_script] Generating article for topic: {topic}")
 
+    # 2️⃣ Generate AI article content
     article = generate_article(topic)
+
+    # 3️⃣ Detect WordPress category from topic
     category_id = detect_category(topic)
     print(f"[ai_script] Detected category ID: {category_id}")
 
+    # 4️⃣ Get featured image
     featured_image_id = get_featured_image_id(topic)
+
+    # 5️⃣ Publish post to WordPress (✅ fixed parameter)
     post_id = post_to_wordpress(
         title=topic,
         content=article,
-        category_id=category_id,
-        featured_image_id=featured_image_id
+        categories=[category_id],  # fixed: must be list
+        image_bytes=None,          # placeholder; your image handler handles upload if needed
+        image_filename=None        # placeholder
     )
 
-    print(f"[ai_script] Successfully posted to WordPress (ID: {post_id})")
+    if post_id:
+        print(f"[ai_script] ✅ Successfully posted to WordPress (ID: {post_id})")
+    else:
+        print("[ai_script] ❌ Post creation failed!")
+
     print("[ai_script] === Run complete. Safe to exit for cron. ===")
 
 
