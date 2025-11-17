@@ -1,146 +1,151 @@
-#!/usr/bin/env python3
 import os
-import sys
-import logging
-import random
 import json
+import random
+import requests
 import openai
+from datetime import datetime
+from config import (
+    OPENAI_API_KEY,
+    OPENAI_MODEL,
+    WP_BASE_URL,
+    WP_USERNAME,
+    WP_APP_PASSWORD,
+    POST_CACHE_FILE,
+    CATEGORY_IDS,
+    CATEGORY_KEYWORDS,
+    ENABLE_LOGGING,
+)
+from image_handler import get_featured_image_id
+from affiliate_injector import load_affiliate_products, inject_affiliate_links
 
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    pass
+# ========== Helper Functions ==========
 
-from wordpress_client import WordPressClient
-from image_handler import search_image
-from content_normalizer import format_content
+def log(msg):
+    if ENABLE_LOGGING:
+        print(f"[ai_script] {msg}")
 
-logging.basicConfig(level=logging.INFO,
-                    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
-                    datefmt='%Y-%m-%d %H:%M:%S')
-logger = logging.getLogger(__name__)
+def load_post_cache():
+    """Load cache of previously posted titles."""
+    if os.path.exists(POST_CACHE_FILE):
+        with open(POST_CACHE_FILE, "r") as f:
+            return json.load(f)
+    return []
 
-def load_affiliate_products(json_path="affiliate_products.json"):
-    """Load affiliate products from a JSON file. Returns a dict mapping categories to product list."""
-    try:
-        with open(json_path, 'r') as f:
-            data = json.load(f)
-            logger.debug(f"Loaded affiliate products from {json_path}")
-            return data
-    except FileNotFoundError:
-        logger.error(f"Affiliate products file not found: {json_path}")
-    except json.JSONDecodeError as e:
-        logger.error(f"Error parsing affiliate products JSON: {e}")
-    return {}
+def save_post_cache(cache):
+    """Save cache to file."""
+    with open(POST_CACHE_FILE, "w") as f:
+        json.dump(cache, f, indent=2)
 
-def choose_topic(categories):
-    """Choose a topic (category) to generate content for. Currently selects a random category from the list."""
-    if not categories:
+def detect_category(title, content):
+    """Determine category based on title/content keywords."""
+    text = f"{title.lower()} {content.lower()}"
+    for category, keywords in CATEGORY_KEYWORDS.items():
+        if any(word in text for word in keywords):
+            return CATEGORY_IDS.get(category)
+    return CATEGORY_IDS["uncategorized"]
+
+# ========== AI Content Generation ==========
+
+def generate_topic():
+    """Generate an SEO-optimized topic related to outdoors/hunting."""
+    topics = [
+        "hunting gear reviews",
+        "country lifestyle tips",
+        "camping essentials",
+        "fishing strategies",
+        "deer season preparation",
+        "outdoor cooking recipes",
+        "dog training for hunting",
+    ]
+    return random.choice(topics)
+
+def generate_article(prompt_topic):
+    """Generate SEO article using OpenAI GPT model."""
+    openai.api_key = OPENAI_API_KEY
+    prompt = f"""
+You are a seasoned outdoors writer who creates SEO-optimized, persuasive, story-driven articles.
+Focus on topics related to {prompt_topic}.
+Make the content authentic, rich, and encourage readers to check recommended gear naturally.
+Avoid sounding like a sales pitch. Include practical insights and real-sounding field advice.
+"""
+
+    log(f"Generating article for topic: {prompt_topic}")
+    response = openai.ChatCompletion.create(
+        model=OPENAI_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=1200,
+        temperature=0.9,
+    )
+    return response.choices[0].message["content"]
+
+# ========== WordPress Posting ==========
+
+def post_to_wordpress(title, content, category_id, featured_media_id=None):
+    """Create a post on WordPress."""
+    url = f"{WP_BASE_URL}/wp-json/wp/v2/posts"
+    headers = {"Content-Type": "application/json"}
+    post_data = {
+        "title": title,
+        "content": content,
+        "status": "publish",
+        "categories": [category_id],
+    }
+
+    if featured_media_id:
+        post_data["featured_media"] = featured_media_id
+
+    response = requests.post(
+        url,
+        headers=headers,
+        json=post_data,
+        auth=(WP_USERNAME, WP_APP_PASSWORD),
+    )
+
+    if response.status_code not in [200, 201]:
+        log(f"WordPress post failed: {response.status_code} {response.text}")
         return None
-    return random.choice(categories)
 
-def generate_content(topic):
-    """
-    Use the OpenAI API to generate a blog post about the given topic.
-    Returns (title, content_markdown) if successful, otherwise (None, None).
-    """
-    if not topic:
-        logger.error("No topic provided for content generation.")
-        return None, None
-    openai_api_key = os.getenv('OPENAI_API_KEY')
-    if not openai_api_key:
-        logger.error("OpenAI API key is not set in environment.")
-        return None, None
-    openai.api_key = openai_api_key
-    prompt = (f"Write a detailed blog post about {topic} for a lifestyle and outdoors blog. "
-              f"Include an introduction and several informative sections with tips or advice about {topic}. "
-              f"Provide a catchy title for the post as an H1 heading at the top, followed by the content in Markdown format.")
-    try:
-        logger.info(f"Generating blog content for topic: {topic}")
-        response = openai.ChatCompletion.create(
-            model=os.getenv('OPENAI_MODEL', 'gpt-4'),
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.7,
-            max_tokens=1500
-        )
-    except Exception as e:
-        logger.error(f"OpenAI API request failed: {e}")
-        return None, None
-    # Extract the content
-    content = response['choices'][0]['message']['content']
-    if not content:
-        logger.error("OpenAI returned empty content.")
-        return None, None
-    # Split title and content if title is included as first line (e.g., Markdown H1)
-    title = None
-    content_markdown = content
-    lines = content.splitlines()
-    if lines:
-        first_line = lines[0].strip()
-        if first_line.startswith("#"):
-            # Use as title (remove leading '# ' characters)
-            title = first_line.lstrip('# ').strip()
-            content_markdown = "\n".join(lines[1:]).strip()
-    if title is None:
-        # If no title found in content, create a simple title
-        title = topic.title()
-    logger.info(f"Generated title: {title}")
-    return title, content_markdown
+    post_id = response.json().get("id")
+    log(f"Successfully posted to WordPress: {title} (ID: {post_id})")
+    return post_id
+
+# ========== Main Runner ==========
 
 def main():
-    # Load affiliate products data
-    affiliate_data = load_affiliate_products()
-    # Determine topic/categories available
-    categories = list(affiliate_data.keys())
-    topic = choose_topic(categories)
-    if not topic:
-        logger.error("No topic could be chosen. Ensure affiliate_products.json has at least one category.")
+    log("=== AI WordPress Post Generation Started ===")
+
+    cache = load_post_cache()
+    products = load_affiliate_products()
+
+    # Step 1: Generate topic + article
+    topic = generate_topic()
+    article = generate_article(topic)
+
+    # Step 2: Derive title
+    title = article.split("\n")[0].strip().replace("#", "")
+    if any(title in c for c in cache):
+        log("Duplicate detected — skipping post.")
         return
-    # Generate content using OpenAI
-    title, content_markdown = generate_content(topic)
-    if not content_markdown:
-        logger.error("Content generation failed, aborting.")
-        return
-    # Format content to HTML and inject affiliate links for the topic
-    products_for_topic = affiliate_data.get(topic, [])
-    if products_for_topic:
-        # Select 5 to 10 related products (or fewer if not enough available)
-        if len(products_for_topic) < 5:
-            selected_products = products_for_topic
-        else:
-            count = random.randint(5, min(10, len(products_for_topic)))
-            selected_products = random.sample(products_for_topic, count) if len(products_for_topic) >= count else products_for_topic
-    else:
-        selected_products = []
-    content_html = format_content(content_markdown, affiliate_products=selected_products)
-    # Fetch a relevant image for the topic
-    image_content, image_filename, image_alt = search_image(topic)
-    # Initialize WordPress client
-    try:
-        wp_client = WordPressClient()
-    except Exception as e:
-        logger.error(f"WordPress client initialization failed: {e}")
-        return
-    # If an image was fetched, upload it to WordPress and get media ID
-    featured_media_id = None
-    if image_content:
-        featured_media_id = wp_client.upload_media(image_content, image_filename, alt_text=image_alt)
-        if not featured_media_id:
-            logger.warning("Proceeding without featured image due to upload failure.")
-    else:
-        logger.info("No image fetched, proceeding without featured image.")
-    # Ensure we have the category ID for the topic
-    category_id = wp_client.get_or_create_category(topic)
-    category_ids = [category_id] if category_id else None
-    # Post to WordPress
-    post_response = wp_client.create_post(title, content_html, category_ids=category_ids, featured_media_id=featured_media_id, status=os.getenv('WP_POST_STATUS', 'publish'))
-    if post_response:
-        post_id = post_response.get('id')
-        post_link = post_response.get('link')
-        logger.info(f"Successfully posted to WordPress (ID: {post_id}). URL: {post_link}")
-    else:
-        logger.error("Failed to post to WordPress.")
+
+    # Step 3: Inject affiliate links inline
+    article_with_links = inject_affiliate_links(article, products)
+
+    # Step 4: Detect category
+    category_id = detect_category(title, article_with_links)
+    log(f"Detected category ID: {category_id}")
+
+    # Step 5: Fetch and upload featured image
+    featured_id = get_featured_image_id(title)
+
+    # Step 6: Post to WordPress
+    post_id = post_to_wordpress(title, article_with_links, category_id, featured_id)
+
+    # Step 7: Update cache
+    if post_id:
+        cache.append(title)
+        save_post_cache(cache)
+
+    log("=== Run complete. Safe to exit for cron. ===")
 
 if __name__ == "__main__":
     main()
