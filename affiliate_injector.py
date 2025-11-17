@@ -1,98 +1,89 @@
 import json
 import random
 import re
-import requests
-from config import AMAZON_TAG, AFFILIATE_LINK_FREQUENCY
+from urllib.parse import urlparse, urlencode, urlunparse
 
-# --- Load product data ---
-def load_affiliate_products(file_path="affiliate_products.json"):
-    try:
-        with open(file_path, "r") as f:
-            data = json.load(f)
-        if isinstance(data, dict):
-            data = list(data.values())
-        return data
-    except Exception as e:
-        print(f"[WARN] Could not load affiliate_products.json: {e}")
-        return []
+AFFILIATE_TAG = "thesaxonblog01-20"
+AFFILIATE_LINK_FREQUENCY = 3  # insert a link every 3 paragraphs
 
-# --- Verify Amazon links ---
+
+def load_affiliate_products(json_path="affiliate_products.json"):
+    """Load affiliate products from JSON file."""
+    with open(json_path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
 def verify_amazon_link(url):
-    try:
-        r = requests.head(url, allow_redirects=True, timeout=5)
-        return r.status_code == 200
-    except requests.RequestException:
-        return False
+    """Check if a given URL is a valid Amazon product link."""
+    parsed = urlparse(url)
+    return "amazon." in parsed.netloc and "/dp/" in parsed.path
 
-# --- Ensure one tag param only ---
-def build_affiliate_link(url):
-    if "amazon.com" not in url:
-        return url
-    import urllib.parse as up
-    parsed = up.urlparse(url)
-    q = dict(up.parse_qsl(parsed.query))
-    q["tag"] = AMAZON_TAG
-    return up.urlunparse(parsed._replace(query=up.urlencode(q)))
 
-# --- Contextual match ---
-def match_products_to_text(paragraph, products):
-    paragraph_lower = paragraph.lower()
-    matching = [
+def build_affiliate_link(product_url):
+    """Append or replace Amazon tag in the URL."""
+    if not verify_amazon_link(product_url):
+        return product_url
+
+    parsed = urlparse(product_url)
+    query = dict([(k.lower(), v) for k, v in [q.split("=") for q in parsed.query.split("&") if "=" in q]]) if parsed.query else {}
+    query["tag"] = AFFILIATE_TAG
+    new_query = urlencode(query)
+    return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, new_query, parsed.fragment))
+
+
+def match_products_to_text(text, products):
+    """Find products whose tags match keywords in the text."""
+    text_lower = text.lower()
+    matched = [
         p for p in products
-        if any(tag.lower() in paragraph_lower for tag in p.get("tags", []))
+        if any(tag.lower() in text_lower for tag in p.get("tags", []))
     ]
-    if not matching:
-        matching = [p for p in products if "outdoor" in p.get("tags", [])]
-    return matching
+    return matched
 
-# --- Random anchor text options ---
+
 def choose_anchor_text():
+    """Select a random phrase for affiliate anchor text."""
     options = [
-        "Check it on Amazon",
-        "See the latest price",
-        "Grab it here",
-        "View details on Amazon",
-        "Get yours today",
-        "See this gear on Amazon"
+        "Check it out here",
+        "See it in action",
+        "Find it on Amazon",
+        "View this recommended gear",
+        "Grab yours now",
     ]
     return random.choice(options)
 
-# --- Inject contextual affiliate links ---
-def inject_affiliate_links(content, products):
-    if not products:
-        return content
 
-    # Split paragraphs on newlines or <p> breaks
-    paragraphs = re.split(r'(?:\n{1,}|</p>)', content)
+def inject_affiliate_links(content, products):
+    """Insert affiliate links into article content."""
+    paragraphs = re.split(r"(?:\n{1,}|\</p\>)", content)
     injected = []
     counter = 0
 
-for paragraph in paragraphs:
-    injected.append(paragraph)
-    if not paragraph.strip():
-        continue
+    for paragraph in paragraphs:
+        injected.append(paragraph)
+        if not paragraph.strip():
+            continue
 
-    counter += 1
-    if counter % AFFILIATE_LINK_FREQUENCY == 0:
-        relevant_products = match_products_to_text(paragraph, products)
+        counter += 1
+        if counter % AFFILIATE_LINK_FREQUENCY == 0:
+            relevant_products = match_products_to_text(paragraph, products)
 
-        # ✅ Prevent empty sequence crash
-        if not relevant_products:
-            print("[INFO] No relevant product match — using fallback list.")
-            relevant_products = products  # fallback to full product list
+            # ✅ Prevent empty sequence crash
+            if not relevant_products:
+                print("[INFO] No relevant product match — using fallback list.")
+                relevant_products = products  # fallback to full product list
 
-        product = random.choice(relevant_products)
-        product_name = product.get("name", "View Product")
-        product_url = build_affiliate_link(product.get("url", "#"))
+            product = random.choice(relevant_products)
+            product_name = product.get("name", "View Product")
+            product_url = build_affiliate_link(product.get("url", "#"))
 
-
-         if verify_amazon_link(product_url):
+            if verify_amazon_link(product_url):
                 anchor_text = choose_anchor_text()
                 injected.append(
                     f'\n\n<a href="{product_url}" target="_blank" rel="nofollow noopener">'
                     f'{anchor_text}: {product_name}</a>\n\n'
                 )
             else:
-                print(f"[SKIP] Dead link skipped: {product_url}")
+                print(f"[WARN] Skipping non-Amazon product: {product_name}")
 
-    return "".join(injected)
+    return "\n".join(injected)
