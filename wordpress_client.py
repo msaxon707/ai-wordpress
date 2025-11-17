@@ -12,7 +12,7 @@ class WordPressClient:
     """
 
     def __init__(self, base_url=None, username=None, password=None):
-        # ✅ Match Coolify env names exactly
+        # ✅ Load Coolify environment variables
         self.base_url = (base_url or os.getenv("WP_BASE_URL", "")).rstrip("/")
         self.username = username or os.getenv("WP_USERNAME")
         self.password = password or os.getenv("WP_APP_PASSWORD")
@@ -21,29 +21,30 @@ class WordPressClient:
             logger.error("WordPressClient initialization failed due to missing credentials or base_url.")
             raise ValueError("WordPress base URL, username, or password not provided.")
 
-        # Build API endpoint
+        # Prepare REST API endpoint
         if not self.base_url.endswith("/wp-json/wp/v2"):
             self.api_base = f"{self.base_url}/wp-json/wp/v2"
         else:
             self.api_base = self.base_url
 
-        # Configure session
+        # Setup session
         self.session = requests.Session()
         self.session.auth = (self.username, self.password)
         self.timeout = 15
+
         logger.info(f"✅ WordPressClient initialized for {self.base_url}")
 
-    # ================= POST CREATION =====================
+    # =================== POST CREATION ===================
 
     def create_post(self, title, content, category_ids=None, featured_media_id=None, status="publish"):
         """
-        Create and publish a WordPress post.
+        Create a WordPress post with optional categories and featured image.
         """
         url = f"{self.api_base}/posts"
         post_data = {
             "title": title,
             "content": content,
-            "status": status,
+            "status": status
         }
 
         if category_ids:
@@ -59,48 +60,45 @@ class WordPressClient:
             return post_id
         except requests.RequestException as e:
             logger.error(f"❌ Failed to create post: {e}")
-            if response is not None:
+            if 'response' in locals() and response is not None:
                 logger.error(response.text)
             return None
 
-    # ================= MEDIA UPLOAD =====================
+    # =================== MEDIA UPLOAD ===================
 
     def upload_media(self, image_content, filename, alt_text=None):
         """
-        Upload an image and return its media ID.
+        Upload an image to the WordPress media library.
         """
         url = f"{self.api_base}/media"
         headers = {
             "Content-Disposition": f'attachment; filename="{filename}"',
-            "Content-Type": "image/jpeg",
+            "Content-Type": "image/jpeg"
         }
 
         try:
             response = self.session.post(url, headers=headers, data=image_content, timeout=self.timeout)
             response.raise_for_status()
             media_id = response.json().get("id")
-            logger.info(f"✅ Uploaded image: {filename} (Media ID: {media_id})")
+            logger.info(f"✅ Uploaded image '{filename}' (Media ID: {media_id})")
 
             # Optional alt text update
             if media_id and alt_text:
-                self.session.post(
-                    f"{self.api_base}/media/{media_id}",
-                    json={"alt_text": alt_text, "title": alt_text},
-                    timeout=self.timeout,
-                )
+                meta = {"alt_text": alt_text, "title": alt_text}
+                self.session.post(f"{self.api_base}/media/{media_id}", json=meta, timeout=self.timeout)
 
             return media_id
         except requests.RequestException as e:
-            logger.error(f"❌ Failed to upload image: {e}")
-            if response is not None:
+            logger.error(f"❌ Media upload failed: {e}")
+            if 'response' in locals() and response is not None:
                 logger.error(response.text)
             return None
 
-    # ================= CATEGORY HANDLER =====================
+    # =================== CATEGORY MANAGEMENT ===================
 
     def get_or_create_category(self, category_name):
         """
-        Fetch a category ID by name or create it if missing.
+        Fetch a category ID or create a new one if it doesn't exist.
         """
         if not category_name:
             return None
@@ -113,7 +111,7 @@ class WordPressClient:
             if resp.status_code == 200 and resp.json():
                 return resp.json()[0]["id"]
 
-            # Create category if not found
+            # Create the category if not found
             cat_data = {"name": category_name, "slug": slug}
             resp = self.session.post(f"{self.api_base}/categories", json=cat_data, timeout=self.timeout)
             if resp.status_code in (200, 201):
@@ -130,17 +128,17 @@ class WordPressClient:
 
 
 # ===============================================================
-# ✅ Simple wrapper for easy posting
+# ✅ Helper for creating posts with media + categories
 # ===============================================================
 
 def post_to_wordpress(title, content, categories=None, image_bytes=None, image_filename=None):
     """
-    High-level helper that handles post creation + optional featured image.
+    High-level helper that creates a WordPress post with optional featured image.
     """
     client = WordPressClient()
     media_id = None
 
-    # Upload image if available
+    # Upload image if provided
     if image_bytes and image_filename:
         media_id = client.upload_media(image_bytes, image_filename, alt_text=title)
 
