@@ -11,11 +11,11 @@ class WordPressClient:
     Uses Basic Auth (username and application password) for authentication.
     """
     def __init__(self, base_url=None, username=None, password=None):
-        # Load connection details from environment if not provided explicitly
-        self.base_url = (base_url or os.getenv('WORDPRESS_URL', '')).rstrip('/')
-        self.username = username or os.getenv('WORDPRESS_USER')
-        self.password = password or os.getenv('WORDPRESS_PASS')
-        if not (self.base_url and self.username and self.password):
+        # Load connection details from environment if not provided explicitly 
+        self.base_url = (base_url or os.getenv('WP_BASE_URL', '')).rstrip('/')
+        self.username = username or os.getenv('WP_USERNAME')
+        self.password = password or os.getenv('WP_APP_PASSWORD')
+       if not (self.base_url and self.username and self.password):
             logger.error("WordPressClient initialization failed due to missing credentials or base_url.")
             raise ValueError("WordPress base URL, username, or password not provided.")
         # Prepare base API endpoint
