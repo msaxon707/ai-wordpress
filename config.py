@@ -1,25 +1,29 @@
-# ==========================
-# ai-wordpress Configuration
-# ==========================
+# =======================================
+# ai-wordpress Configuration (Final Build)
+# =======================================
 
-class Settings:
-    # WordPress
-    WP_BASE_URL: str = _norm_base_url(os.getenv("WP_BASE_URL", ""))
-    WP_USERNAME: str = os.getenv("WP_USERNAME", "")
-    WP_APP_PASSWORD: str = os.getenv("WP_APP_PASSWORD", "")
+import os
 
-    # OpenAI
-    OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
-    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-    OPENAI_TEMPERATURE: float = float(os.getenv("OPENAI_TEMPERATURE", "0.7"))
+# --- Helper: Normalize WordPress URL ---
+def _norm_base_url(url: str) -> str:
+    """Ensure no trailing slash in base URL."""
+    return url.rstrip("/")
+
+# --- API KEYS (keep private) ---
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "sk-proj-xxxx")       # your OpenAI key
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "JLoA2xxxx")
+WP_BASE_URL = _norm_base_url(os.getenv("WP_BASE_URL", "https://thesaxonblog.com"))
+WP_USERNAME = os.getenv("WP_USERNAME", "megansaxon9@gmail.com")
+WP_APP_PASSWORD = os.getenv("WP_APP_PASSWORD", "ligxxxxxx")
 
 # --- General Settings ---
-RUN_MODE = "once"   # 'once' for cron-based runs
+RUN_MODE = "once"   # safe for cron-based runs
 POST_CACHE_FILE = "posted_titles.json"
 MAX_PARAGRAPHS = 8
 AFFILIATE_LINK_FREQUENCY = 3  # every 2–3 paragraphs
 
-# --- Affiliate ---
+# --- Affiliate Settings ---
 AMAZON_TAG = "thesaxonblog01-20"
 
 # --- Category Mapping ---
@@ -52,3 +56,7 @@ MAX_RETRIES = 3
 # --- Logging ---
 ENABLE_LOGGING = True
 LOG_FILE = "ai_wordpress.log"
+
+# --- Helper Print for Verification (optional) ---
+if __name__ == "__main__":
+    print(f"✅ Config loaded for: {WP_BASE_URL}")
