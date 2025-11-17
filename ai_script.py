@@ -55,4 +55,20 @@ def main():
     print(f"[ai_script] Generating article for topic: {topic}")
 
     article = generate_article(topic)
-    c
+    category_id = detect_category(topic)
+    print(f"[ai_script] Detected category ID: {category_id}")
+
+    featured_image_id = get_featured_image_id(topic)
+    post_id = post_to_wordpress(
+        title=topic,
+        content=article,
+        category_id=category_id,
+        featured_image_id=featured_image_id
+    )
+
+    print(f"[ai_script] Successfully posted to WordPress (ID: {post_id})")
+    print("[ai_script] === Run complete. Safe to exit for cron. ===")
+
+
+if __name__ == "__main__":
+    main()
