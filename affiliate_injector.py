@@ -1,122 +1,66 @@
-import json
 import random
-import re
-from urllib.parse import urlparse, urlencode, urlunparse
 
-AFFILIATE_TAG = "thesaxonblog01-20"
-AFFILIATE_LINK_FREQUENCY = 3  # insert a link every 3 paragraphs
+def inject_affiliate_links(article_html, products):
+    """
+    Injects affiliate buttons into the article HTML every few paragraphs.
+    Buttons are formatted for clean display in WordPress.
+    """
+    if not products:
+        print("[WARN] No affiliate products available to inject.")
+        return article_html
 
+    paragraphs = article_html.split("</p>")
+    enhanced_paragraphs = []
+    used = set()
 
-def load_affiliate_products(json_path="affiliate_products.json"):
-    """Load affiliate products from JSON file."""
-    with open(json_path, "r", encoding="utf-8") as f:
-        return json.load(f)
+    # Randomize order of product links for variety
+    random.shuffle(products)
 
+    print("[affiliate_injector] Adding Amazon links to article:")
 
-def verify_amazon_link(url):
-    """Check if a given URL is a valid Amazon product link."""
-    parsed = urlparse(url)
-    return "amazon." in parsed.netloc and "/dp/" in parsed.path
-
-
-def build_affiliate_link(product_url):
-    """Append or replace Amazon tag in the URL."""
-    if not verify_amazon_link(product_url):
-        return product_url
-
-    parsed = urlparse(product_url)
-    query = dict([(k.lower(), v) for k, v in [q.split("=") for q in parsed.query.split("&") if "=" in q]]) if parsed.query else {}
-    query["tag"] = AFFILIATE_TAG
-    new_query = urlencode(query)
-    return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, new_query, parsed.fragment))
-
-import openai
-import os
-
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-openai.api_key = OPENAI_API_KEY
-
-def match_products_to_text(text, products):
-    """Use semantic similarity to find products that best match the paragraph context."""
-    text_lower = text.lower()
-
-    # Quick keyword-based filter first
-    matched = [
-        p for p in products
-        if any(tag.lower() in text_lower for tag in p.get("tags", []))
-    ]
-
-    # If no keyword match, use semantic fallback
-    if not matched:
-        try:
-            response = openai.Embedding.create(
-                model="text-embedding-3-small",
-                input=text_lower,
-            )
-            text_vector = response['data'][0]['embedding']
-
-            # Simple semantic scoring by overlapping tags and description
-            def relevance_score(prod):
-                desc = " ".join(prod.get("tags", [])) + " " + prod.get("name", "")
-                resp = openai.Embedding.create(model="text-embedding-3-small", input=desc)
-                prod_vector = resp['data'][0]['embedding']
-                # cosine similarity simplified
-                dot = sum(a*b for a, b in zip(text_vector, prod_vector))
-                return dot
-
-            ranked = sorted(products, key=relevance_score, reverse=True)
-            return ranked[:5]  # top 5 most relevant products
-        except Exception as e:
-            print(f"[WARN] Semantic match fallback failed: {e}")
-            return []
-
-    return matched
-
-
-
-def choose_anchor_text():
-    """Select a random phrase for affiliate anchor text."""
-    options = [
-        "Check it out here",
-        "See it in action",
-        "Find it on Amazon",
-        "View this recommended gear",
-        "Grab yours now",
-    ]
-    return random.choice(options)
-
-
-def inject_affiliate_links(content, products):
-    """Insert affiliate links into article content."""
-    paragraphs = re.split(r"(?:\n{1,}|\</p\>)", content)
-    injected = []
-    counter = 0
-
-    for paragraph in paragraphs:
-        injected.append(paragraph)
+    for i, paragraph in enumerate(paragraphs):
         if not paragraph.strip():
             continue
 
-        counter += 1
-        if counter % AFFILIATE_LINK_FREQUENCY == 0:
-            relevant_products = match_products_to_text(paragraph, products)
+        # Append paragraph content
+        enhanced_paragraphs.append(paragraph + "</p>")
 
-            # ✅ Prevent empty sequence crash
-            if not relevant_products:
-                print("[INFO] No relevant product match — using fallback list.")
-                relevant_products = products  # fallback to full product list
+        # Every 2-3 paragraphs, insert a product link
+        if i % 2 == 1 and products:
+            product = None
 
-            product = random.choice(relevant_products)
-            product_name = product.get("name", "View Product")
-            product_url = build_affiliate_link(product.get("url", "#"))
+            # Pick a product not used yet
+            for p in products:
+                if p["name"] not in used:
+                    product = p
+                    used.add(p["name"])
+                    break
 
-            if verify_amazon_link(product_url):
-                anchor_text = choose_anchor_text()
-                injected.append(
-                    f'\n\n<a href="{product_url}" target="_blank" rel="nofollow noopener">'
-                    f'{anchor_text}: {product_name}</a>\n\n'
-                )
-            else:
-                print(f"[WARN] Skipping non-Amazon product: {product_name}")
+            # If all used, reset (ensures multiple buttons still appear)
+            if not product:
+                used.clear()
+                product = random.choice(products)
 
-    return "\n".join(injected)
+            # Button HTML block
+            button_html = f"""
+            <div style="margin:10px 0;">
+              <a href="{product['url']}" 
+                 target="_blank" 
+                 rel="nofollow sponsored noopener" 
+                 style="background-color:#1b5e20;
+                        color:#fff;
+                        padding:10px 15px;
+                        border-radius:6px;
+                        text-decoration:none;
+                        font-weight:bold;
+                        display:inline-block;">
+                 🔗 View {product['name']} on Amazon
+              </a>
+            </div>
+            """
+            enhanced_paragraphs.append(button_html.strip())
+            print(f"[affiliate_injector] Added Amazon link: {product['url']}")
+
+    # Combine all content back into one string
+    injected_html = "\n".join(enhanced_paragraphs)
+    return injected_html
