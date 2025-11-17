@@ -13,7 +13,7 @@ def get_pexels_image_url(query):
     Returns the URL of a random image result.
     """
     headers = {"Authorization": PEXELS_API_KEY}
-    params = {"query": query, "per_page": 10}
+    params = {"query": query or "outdoor hunting", "per_page": 10}
     response = requests.get("https://api.pexels.com/v1/search", headers=headers, params=params)
 
     if response.status_code != 200:
