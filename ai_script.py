@@ -40,11 +40,10 @@ def generate_article(prompt_topic):
 
     article_html = response.choices[0].message.content.strip()
     return normalize_content(article_html)
-    def generate_seo_metadata(article_text, topic):
-    """Generate an SEO title and meta description using OpenAI."""
-    from openai import OpenAI
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+
+def generate_seo_metadata(article_text, topic):
+    """Generate an SEO title and meta description using OpenAI."""
     prompt = f"""
     Analyze this blog article and craft:
     1. A catchy SEO title (≤60 characters) that includes the keyword "{topic}".
@@ -76,7 +75,6 @@ def generate_article(prompt_topic):
         return topic, ""
 
 
-
 def main():
     print("[ai_script] === AI WordPress Post Generation Started ===")
 
@@ -101,16 +99,22 @@ def main():
     category_id = detect_category(topic)
     print(f"[ai_script] Detected category ID: {category_id}")
 
-    # 6️⃣ Get featured image
+    # 6️⃣ Generate SEO metadata
+    seo_title, seo_desc = generate_seo_metadata(article, topic)
+    print(f"[ai_script] SEO Title: {seo_title}")
+    print(f"[ai_script] Meta Description: {seo_desc}")
+
+    # 7️⃣ Get featured image
     featured_image_id = get_featured_image_id(topic)
 
-    # 7️⃣ Post to WordPress
+    # 8️⃣ Post to WordPress
     post_id = post_to_wordpress(
-        title=topic,
+        title=seo_title,
         content=article_with_links,
         categories=[category_id],
         image_bytes=None,
-        image_filename=None
+        image_filename=None,
+        meta_description=seo_desc
     )
 
     if post_id:
