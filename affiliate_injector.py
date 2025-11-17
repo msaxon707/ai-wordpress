@@ -82,9 +82,12 @@ def inject_affiliate_links(content, products):
 
             product = random.choice(relevant_products)
 
-            product = random.choice(relevant_products)
             product_name = product.get("name", "View Product")
             product_url = build_affiliate_link(product.get("url", "#"))
+            if not relevant_products:
+            print("[INFO] No relevant product match — using fallback list.")
+            relevant_products = products
+
 
             if verify_amazon_link(product_url):
                 anchor_text = choose_anchor_text()
