@@ -17,7 +17,9 @@ from config import (
     ENABLE_LOGGING,
 )
 from image_handler import get_featured_image_id
+from ai_product_recommender import generate_product_suggestions, create_amazon_links
 from affiliate_injector import load_affiliate_products, inject_affiliate_links
+
 
 # ========== Helper Functions ==========
 
@@ -102,6 +104,27 @@ Avoid sounding like a sales pitch. Include practical insights and real-sounding 
   )
 
     return response.choices[0].message["content"]
+
+article_text = response.choices[0].message["content"]
+
+# ====== AI Product Recommender Integration ======
+from ai_product_recommender import generate_product_suggestions, create_amazon_links
+from affiliate_injector import load_affiliate_products, inject_affiliate_links
+
+# 1️⃣  Generate AI-based product suggestions from the article text
+product_names = generate_product_suggestions(article_text)
+dynamic_products = create_amazon_links(product_names)
+
+# 2️⃣  Load your static affiliate backup list (hybrid mode)
+static_products = load_affiliate_products()
+
+# 3️⃣  Merge them for the injector
+all_products = dynamic_products + static_products
+
+# 4️⃣  Inject contextual affiliate links into the article
+article_with_links = inject_affiliate_links(article_text, all_products)
+
+return article_with_links
 
 # ========== WordPress Posting ==========
 
