@@ -93,12 +93,12 @@ def main():
 
     # Post to WordPress
     post_id = post_to_wordpress(
-        title=seo_title,
-        content=article_with_links,
-        category_ids=[category_id],
-        featured_media_id=featured_image_id,
-        excerpt=seo_description,
-    )
+    title=seo_title,
+    content=article_with_links,
+    category_id=category_id,
+    featured_media_id=featured_image_id,
+    excerpt=seo_description,
+)
 
     print(f"[ai_script] ✅ Successfully posted to WordPress (ID: {post_id})")
     print("[ai_script] === Run complete. Safe to exit for cron. ===")
