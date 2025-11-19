@@ -3,7 +3,7 @@ import random
 AFFILIATE_LINK_FREQUENCY = 3
 
 def inject_affiliate_links(content, products):
-    """Insert contextual Amazon affiliate links into the article content."""
+    """Inject Amazon links into paragraphs cleanly."""
     if not products:
         print("[WARN] No affiliate products available to inject.")
         return content
@@ -21,14 +21,11 @@ def inject_affiliate_links(content, products):
 
         if counter % AFFILIATE_LINK_FREQUENCY == 0:
             product = random.choice(products)
-            product_name = product.get("name", "View on Amazon")
-            product_url = product.get("url", "#")
-
-            link_html = (
-                f'<p><a href="{product_url}" target="_blank" rel="nofollow noopener">'
-                f'🔗 View {product_name} on Amazon</a></p>'
+            name = product.get("name", "View on Amazon")
+            url = product.get("url", "#")
+            injected.append(
+                f'<p><a href="{url}" target="_blank" rel="nofollow noopener">'
+                f'🔗 View {name} on Amazon</a></p>'
             )
-
-            injected.append(link_html)
 
     return "".join(injected)
