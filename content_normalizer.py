@@ -1,23 +1,27 @@
 import re
 
-def normalize_content(text):
-    """Clean up AI-generated text and format into proper HTML for WordPress."""
+def normalize_content(text: str) -> str:
+    """Clean and format the AI-generated article into valid HTML for WordPress."""
     if not text:
         return ""
 
-    # Remove unwanted placeholders or tags like [HEAD], [META], etc.
-    text = re.sub(r'\[.*?\]', '', text)
+    # --- Remove placeholders like [HEAD], [META], [BODY] ---
+    text = re.sub(r'\[(HEAD|META|TITLE|BODY)\]', '', text, flags=re.IGNORECASE)
 
-    # Convert markdown-style headings (###, ##) to HTML <h2>, <h3>
-    text = re.sub(r'###\s*(.*)', r'<h3>\1</h3>', text)
-    text = re.sub(r'##\s*(.*)', r'<h2>\1</h2>', text)
+    # --- Fix headings ---
+    text = re.sub(r'###\s*(.+)', r'<h3>\1</h3>', text)
+    text = re.sub(r'##\s*(.+)', r'<h2>\1</h2>', text)
+    text = re.sub(r'#\s*(.+)', r'<h1>\1</h1>', text)
 
-    # Ensure paragraphs are wrapped correctly
-    paragraphs = [p.strip() for p in text.split("\n") if p.strip()]
-    text = "".join(f"<p>{p}</p>" for p in paragraphs)
+    # --- Clean markdown links and ensure plain text URLs stay visible ---
+    text = re.sub(r'\[(.*?)\]\((.*?)\)', r'<a href="\2">\1</a>', text)
 
-    # Clean up double tags or excess spaces
-    text = re.sub(r'<p>\s*</p>', '', text)
-    text = re.sub(r'\s+', ' ', text)
+    # --- Wrap paragraphs in <p> tags ---
+    parts = [p.strip() for p in text.split('\n') if p.strip()]
+    html = ''.join(f"<p>{p}</p>" for p in parts)
 
-    return text.strip()
+    # --- Final cleanup ---
+    html = re.sub(r'<p>\s*</p>', '', html)
+    html = re.sub(r'\s+', ' ', html)
+
+    return html.strip()
