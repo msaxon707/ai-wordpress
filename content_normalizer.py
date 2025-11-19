@@ -1,33 +1,23 @@
 import re
 
-def normalize_content(text: str) -> str:
-    """
-    Cleans GPT-generated text into valid HTML for WordPress.
-    Removes markdown, hashtags, and unnecessary formatting.
-    """
-
+def normalize_content(text):
+    """Clean up AI-generated text and format into proper HTML for WordPress."""
     if not text:
         return ""
 
-    # Remove markdown headings like "###", "##"
-    text = re.sub(r"#+\s*", "", text)
+    # Remove unwanted placeholders or tags like [HEAD], [META], etc.
+    text = re.sub(r'\[.*?\]', '', text)
 
-    # Remove hashtags (#outdoors #decor)
-    text = re.sub(r"#\w+", "", text)
+    # Convert markdown-style headings (###, ##) to HTML <h2>, <h3>
+    text = re.sub(r'###\s*(.*)', r'<h3>\1</h3>', text)
+    text = re.sub(r'##\s*(.*)', r'<h2>\1</h2>', text)
 
-    # Replace markdown-style bold/italic
-    text = text.replace("**", "").replace("*", "")
-
-    # Replace line breaks with proper paragraph tags
+    # Ensure paragraphs are wrapped correctly
     paragraphs = [p.strip() for p in text.split("\n") if p.strip()]
-    html_paragraphs = [f"<p>{p}</p>" for p in paragraphs]
-    text = "\n".join(html_paragraphs)
+    text = "".join(f"<p>{p}</p>" for p in paragraphs)
 
-    # Normalize whitespace
-    text = re.sub(r"\s{2,}", " ", text)
-    text = text.strip()
+    # Clean up double tags or excess spaces
+    text = re.sub(r'<p>\s*</p>', '', text)
+    text = re.sub(r'\s+', ' ', text)
 
-    # Basic sanitization
-    text = text.replace("<p><p>", "<p>").replace("</p></p>", "</p>")
-
-    return text
+    return text.strip()
