@@ -107,7 +107,7 @@ def main():
             if not p.get("featured_media") or p["featured_media"] == 0:
                 media_id = get_featured_image_id(title)
                 if media_id:
-                    safe_put(client, f"{client.api_url}/posts/{pid}", {"featured_media": media_id})
+                    safe_put(client, f"{client.api_url}/posts/{pid}", {"content": updated_content}, retries=5)
                     changed.append("featured_image")
 
             # === 2️⃣ EXCERPT ===
