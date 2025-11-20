@@ -47,17 +47,30 @@ def audit_post(p):
 
 def main():
     page = 1
+    per_page = 25
     while True:
-        posts = get_posts(page)
-        if not posts or len(posts) == 0:
+        url = f"{BASE}/wp-json/wp/v2/posts?status=publish&per_page={per_page}&page={page}"
+        r = requests.get(url, auth=(USERNAME, APP_PASS))
+        if r.status_code == 400:
+            print(f"[DONE] Reached end of posts at page {page}. Audit complete.")
+            break
+        r.raise_for_status()
+        posts = r.json()
+        if not posts:
             print(f"[DONE] No more posts found at page {page}. Audit complete.")
             break
+
         for p in posts:
             report = audit_post(p)
             if report["fixes"]:
                 print(f"\nPost {report['id']} - {report['title']}")
                 for f in report["fixes"]:
                     print("  →", f)
+
+        total_pages = int(r.headers.get("X-WP-TotalPages", page))
+        if page >= total_pages:
+            print(f"[DONE] Processed all {total_pages} pages.")
+            break
         page += 1
 if __name__ == "__main__":
     main()
