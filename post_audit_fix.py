@@ -62,7 +62,7 @@ def safe_put(client, url, data, retries=3):
     """Retry PUT requests safely up to 3 times."""
     for attempt in range(1, retries + 1):
         try:
-            r = client.session.put(url, json=data, timeout=25)
+            r = client.session.put(url, json=data, timeout=60)
             if r.status_code in (200, 201):
                 return True
             else:
