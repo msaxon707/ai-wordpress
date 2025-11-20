@@ -49,7 +49,8 @@ def main():
     page = 1
     while True:
         posts = get_posts(page)
-        if not posts:
+        if not posts or len(posts) == 0:
+            print(f"[DONE] No more posts found at page {page}. Audit complete.")
             break
         for p in posts:
             report = audit_post(p)
@@ -58,6 +59,5 @@ def main():
                 for f in report["fixes"]:
                     print("  →", f)
         page += 1
-
 if __name__ == "__main__":
     main()
