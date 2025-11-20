@@ -4,68 +4,57 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-
 class WordPressClient:
-    def __init__(self, base_url=None, username=None, password=None):
-        self.base_url = (base_url or os.getenv("WP_BASE_URL", "")).rstrip("/")
-        self.username = username or os.getenv("WP_USERNAME")
-        self.password = password or os.getenv("WP_APP_PASSWORD")
+    def __init__(self):
+        self.base_url = os.getenv("WP_BASE_URL")
+        self.username = os.getenv("WP_USERNAME")
+        self.password = os.getenv("WP_APP_PASSWORD")
 
-        if not (self.base_url and self.username and self.password):
-            logger.error("WordPressClient initialization failed due to missing credentials or base_url.")
-            raise ValueError("WordPress base URL, username, or password not provided.")
+        if not all([self.base_url, self.username, self.password]):
+            raise ValueError("[ERROR] Missing WordPress credentials or base URL.")
 
-        if not self.base_url.endswith("/wp-json/wp/v2"):
-            self.api_base = self.base_url + "/wp-json/wp/v2"
-        else:
-            self.api_base = self.base_url
-
+        self.api_url = f"{self.base_url.rstrip('/')}/wp-json/wp/v2"
         self.session = requests.Session()
         self.session.auth = (self.username, self.password)
-        self.timeout = 15
-        logger.debug(f"Initialized WordPressClient for {self.base_url}")
+        self.timeout = 20
 
-    def upload_media(self, image_content, filename, alt_text=None):
+    def upload_media(self, image_bytes, filename, alt_text=None):
         """Upload an image to WordPress media library."""
-        if not image_content:
+        if not image_bytes:
             return None
 
-        url = f"{self.api_base}/media"
         headers = {
+            "Content-Disposition": f'attachment; filename="{filename}"',
             "Content-Type": "image/jpeg",
-            "Content-Disposition": f'attachment; filename="{filename}"'
         }
+
         try:
-            response = self.session.post(url, headers=headers, data=image_content, timeout=self.timeout)
+            response = self.session.post(f"{self.api_url}/media", headers=headers, data=image_bytes, timeout=self.timeout)
             if response.status_code not in (200, 201):
                 logger.error(f"Media upload failed: {response.status_code} {response.text}")
                 return None
 
             media_id = response.json().get("id")
             if alt_text:
-                meta_url = f"{self.api_base}/media/{media_id}"
-                self.session.post(meta_url, json={"alt_text": alt_text}, timeout=self.timeout)
+                self.session.post(f"{self.api_url}/media/{media_id}", json={"alt_text": alt_text, "title": alt_text}, timeout=self.timeout)
             return media_id
-
         except Exception as e:
-            logger.error(f"Failed to upload media: {e}")
+            logger.error(f"Media upload error: {e}")
             return None
 
-    def create_post(self, title, content, categories, featured_media_id=None, meta_description=None):
-        """Create a new WordPress post with SEO metadata support."""
-        url = f"{self.api_base}/posts"
+    def create_post(self, title, content, category_id=None, featured_media_id=None, excerpt=None, status="publish"):
+        """Create WordPress post with SEO excerpt."""
+        url = f"{self.api_url}/posts"
         post_data = {
-            "title": title,
-            "content": content,
-            "status": "publish",
-            "categories": categories
+            "title": title.strip(),
+            "content": content.strip(),
+            "status": status,
+            "excerpt": excerpt or "",
+            "categories": [category_id] if category_id else [],
         }
 
         if featured_media_id:
             post_data["featured_media"] = featured_media_id
-
-        if meta_description:
-            post_data["yoast_head_json"] = {"description": meta_description}
 
         try:
             response = self.session.post(url, json=post_data, timeout=self.timeout)
@@ -73,24 +62,18 @@ class WordPressClient:
                 logger.error(f"Post creation failed: {response.status_code} {response.text}")
                 return None
             return response.json().get("id")
-
         except Exception as e:
             logger.error(f"Post creation error: {e}")
             return None
 
 
-def post_to_wordpress(title, content, categories, image_bytes=None, image_filename=None, meta_description=None):
+def post_to_wordpress(title, content, category_id=None, featured_media_id=None, excerpt=None):
+    """Simple wrapper for posting to WordPress."""
     client = WordPressClient()
-    featured_media_id = None
-
-    if image_bytes and image_filename:
-        featured_media_id = client.upload_media(image_bytes, image_filename, alt_text=title)
-
-    post_id = client.create_post(
+    return client.create_post(
         title=title,
         content=content,
-        categories=categories,
+        category_id=category_id,
         featured_media_id=featured_media_id,
-        meta_description=meta_description
+        excerpt=excerpt
     )
-    return post_id
