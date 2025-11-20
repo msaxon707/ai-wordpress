@@ -1,7 +1,6 @@
 """
-post_audit_fix_resumable.py
-One-time WordPress post fixer with retry + delay.
-Resumes after connection errors and logs every change.
+post_audit_fix_final.py
+One-time WordPress post fixer with automatic resume, retries, and image fallback.
 """
 
 import os, json, time, requests, openai
@@ -56,20 +55,20 @@ def generate_meta(title):
         return data.get("title", title), data.get("description", "")
     except Exception as e:
         log(f"[WARN] Meta generation failed: {e}")
-        return title, f"Explore {title} tips from The Saxon Blog."
+        return title, f"Explore {title} insights from The Saxon Blog."
 
-def safe_put(client, url, data, retries=3):
-    """Retry PUT requests safely up to 3 times."""
+def safe_put(client, url, data, retries=3, timeout=90):
+    """Retry PUT requests safely with increased timeout."""
     for attempt in range(1, retries + 1):
         try:
-            r = client.session.put(url, json=data, timeout=60)
+            r = client.session.put(url, json=data, timeout=timeout)
             if r.status_code in (200, 201):
                 return True
             else:
-                log(f"[WARN] PUT failed ({r.status_code}): {r.text[:120]}")
+                log(f"[WARN] PUT failed ({r.status_code}): {r.text[:100]}")
         except requests.exceptions.RequestException as e:
             log(f"[WARN] Connection error on attempt {attempt}: {e}")
-        time.sleep(2)
+        time.sleep(5)
     log("[ERROR] Max retries reached, skipping post.")
     return False
 
@@ -82,7 +81,7 @@ def main():
     while True:
         url = f"{BASE}/wp-json/wp/v2/posts?status=publish&per_page={per_page}&page={page}"
         try:
-            r = requests.get(url, auth=(USERNAME, APP_PASS), timeout=30)
+            r = requests.get(url, auth=(USERNAME, APP_PASS), timeout=60)
             if r.status_code == 400:
                 log("[DONE] No more posts found. Exiting.")
                 break
@@ -103,12 +102,22 @@ def main():
             changed = []
             log(f"[PROCESSING] Post {pid}: {title}")
 
-            # === 1️⃣ FEATURED IMAGE ===
+            # === 1️⃣ FEATURED IMAGE (with retries) ===
             if not p.get("featured_media") or p["featured_media"] == 0:
-                media_id = get_featured_image_id(title)
-                if media_id:
-                    safe_put(client, f"{client.api_url}/posts/{pid}", {"content": updated_content}, retries=5)
-                    changed.append("featured_image")
+                media_id = None
+                for attempt in range(3):
+                    try:
+                        media_id = get_featured_image_id(title)
+                        if media_id:
+                            safe_put(client, f"{client.api_url}/posts/{pid}",
+                                     {"featured_media": media_id}, retries=3)
+                            changed.append("featured_image")
+                            break
+                    except Exception as e:
+                        log(f"[WARN] Image upload attempt {attempt+1} failed: {e}")
+                        time.sleep(5)
+                if not media_id:
+                    log(f"[SKIP] Image upload failed after 3 attempts for {title}")
 
             # === 2️⃣ EXCERPT ===
             if not p.get("excerpt") or not p["excerpt"]["rendered"].strip():
@@ -119,10 +128,11 @@ def main():
             # === 3️⃣ META ===
             meta_title, meta_desc = generate_meta(title)
             safe_put(client, f"{client.api_url}/posts/{pid}",
-                     {"meta": {"_yoast_wpseo_title": meta_title, "_yoast_wpseo_metadesc": meta_desc}})
+                     {"meta": {"_yoast_wpseo_title": meta_title,
+                               "_yoast_wpseo_metadesc": meta_desc}})
             changed.append("meta")
 
-            # === 4️⃣ AFFILIATE + INTERNAL LINKS ===
+            # === 4️⃣ LINKS ===
             product_names = generate_product_suggestions(content)
             dynamic_products = create_amazon_links(product_names)
             all_products = dynamic_products + products
@@ -144,14 +154,14 @@ def main():
                 except Exception as e:
                     log(f"[WARN] Related post fetch failed: {e}")
 
-            safe_put(client, f"{client.api_url}/posts/{pid}", {"content": updated_content})
+            safe_put(client, f"{client.api_url}/posts/{pid}",
+                     {"content": updated_content}, retries=5, timeout=90)
             changed.append("links")
 
             if changed:
                 log(f"[FIXED] Post {pid} ({title}): {', '.join(changed)}")
 
-            # Add delay to avoid rate limit
-            time.sleep(3)
+            time.sleep(4)  # Slight delay between posts
 
         total_pages = int(r.headers.get("X-WP-TotalPages", page))
         if page >= total_pages:
