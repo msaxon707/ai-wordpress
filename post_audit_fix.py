@@ -1,11 +1,10 @@
 """
-One-time WordPress post fixer.
-Runs once, fixes excerpts, meta, images, internal + affiliate links.
-Logs everything to /app/audit_log.txt
-Safe to delete after running.
+post_audit_fix_resumable.py
+One-time WordPress post fixer with retry + delay.
+Resumes after connection errors and logs every change.
 """
 
-import os, json, requests, openai
+import os, json, time, requests, openai
 from datetime import datetime
 from affiliate_injector import inject_affiliate_links, load_affiliate_products
 from ai_product_recommender import generate_product_suggestions, create_amazon_links
@@ -22,9 +21,10 @@ MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 # === LOGGING ===
 LOG_FILE = "/app/audit_log.txt"
 def log(msg):
-    with open(LOG_FILE, "a") as f:
-        f.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}\n")
+    msg = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}"
     print(msg)
+    with open(LOG_FILE, "a") as f:
+        f.write(msg + "\n")
 
 # === HELPERS ===
 def generate_excerpt(content, title):
@@ -56,9 +56,24 @@ def generate_meta(title):
         return data.get("title", title), data.get("description", "")
     except Exception as e:
         log(f"[WARN] Meta generation failed: {e}")
-        return title, f"Explore {title} guides and inspiration from The Saxon Blog."
+        return title, f"Explore {title} tips from The Saxon Blog."
 
-# === MAIN FIX SCRIPT ===
+def safe_put(client, url, data, retries=3):
+    """Retry PUT requests safely up to 3 times."""
+    for attempt in range(1, retries + 1):
+        try:
+            r = client.session.put(url, json=data, timeout=25)
+            if r.status_code in (200, 201):
+                return True
+            else:
+                log(f"[WARN] PUT failed ({r.status_code}): {r.text[:120]}")
+        except requests.exceptions.RequestException as e:
+            log(f"[WARN] Connection error on attempt {attempt}: {e}")
+        time.sleep(2)
+    log("[ERROR] Max retries reached, skipping post.")
+    return False
+
+# === MAIN ===
 def main():
     client = WordPressClient()
     page, per_page = 1, 25
@@ -66,57 +81,60 @@ def main():
 
     while True:
         url = f"{BASE}/wp-json/wp/v2/posts?status=publish&per_page={per_page}&page={page}"
-        r = requests.get(url, auth=(USERNAME, APP_PASS))
-        if r.status_code == 400:
-            log("[DONE] No more posts found. Exiting.")
-            break
-        r.raise_for_status()
+        try:
+            r = requests.get(url, auth=(USERNAME, APP_PASS), timeout=30)
+            if r.status_code == 400:
+                log("[DONE] No more posts found. Exiting.")
+                break
+            r.raise_for_status()
+        except Exception as e:
+            log(f"[WARN] Failed to fetch page {page}: {e}")
+            time.sleep(5)
+            continue
+
         posts = r.json()
         if not posts:
-            log("[DONE] Empty batch. Exiting.")
+            log("[DONE] No posts returned, ending run.")
             break
 
         for p in posts:
             pid, title = p["id"], p["title"]["rendered"]
             content = p["content"]["rendered"]
             changed = []
+            log(f"[PROCESSING] Post {pid}: {title}")
 
             # === 1️⃣ FEATURED IMAGE ===
             if not p.get("featured_media") or p["featured_media"] == 0:
                 media_id = get_featured_image_id(title)
                 if media_id:
-                    client.session.put(f"{client.api_url}/posts/{pid}",
-                        json={"featured_media": media_id}, timeout=20)
+                    safe_put(client, f"{client.api_url}/posts/{pid}", {"featured_media": media_id})
                     changed.append("featured_image")
 
             # === 2️⃣ EXCERPT ===
             if not p.get("excerpt") or not p["excerpt"]["rendered"].strip():
                 excerpt = generate_excerpt(content, title)
-                client.session.put(f"{client.api_url}/posts/{pid}",
-                    json={"excerpt": excerpt}, timeout=20)
+                safe_put(client, f"{client.api_url}/posts/{pid}", {"excerpt": excerpt})
                 changed.append("excerpt")
 
-            # === 3️⃣ META DATA ===
+            # === 3️⃣ META ===
             meta_title, meta_desc = generate_meta(title)
-            client.session.put(f"{client.api_url}/posts/{pid}",
-                json={"meta": {"_yoast_wpseo_title": meta_title, "_yoast_wpseo_metadesc": meta_desc}},
-                timeout=20)
+            safe_put(client, f"{client.api_url}/posts/{pid}",
+                     {"meta": {"_yoast_wpseo_title": meta_title, "_yoast_wpseo_metadesc": meta_desc}})
             changed.append("meta")
 
-            # === 4️⃣ AFFILIATE LINKS ===
+            # === 4️⃣ AFFILIATE + INTERNAL LINKS ===
             product_names = generate_product_suggestions(content)
             dynamic_products = create_amazon_links(product_names)
             all_products = dynamic_products + products
             updated_content = inject_affiliate_links(content, all_products)
 
-            # === 5️⃣ INTERNAL LINKS (SAME CATEGORY) ===
             cats = p.get("categories", [])
             if cats:
                 cat_id = cats[0]
                 try:
                     related = requests.get(
                         f"{BASE}/wp-json/wp/v2/posts?categories={cat_id}&per_page=3",
-                        auth=(USERNAME, APP_PASS)
+                        auth=(USERNAME, APP_PASS), timeout=20
                     ).json()
                     for rpost in related:
                         if rpost["id"] != pid:
@@ -124,14 +142,16 @@ def main():
                             if link not in updated_content:
                                 updated_content += f'<p>Related: <a href="{link}">{rpost["title"]["rendered"]}</a></p>'
                 except Exception as e:
-                    log(f"[WARN] Internal link fetch failed: {e}")
+                    log(f"[WARN] Related post fetch failed: {e}")
 
-            client.session.put(f"{client.api_url}/posts/{pid}",
-                json={"content": updated_content}, timeout=30)
+            safe_put(client, f"{client.api_url}/posts/{pid}", {"content": updated_content})
             changed.append("links")
 
             if changed:
                 log(f"[FIXED] Post {pid} ({title}): {', '.join(changed)}")
+
+            # Add delay to avoid rate limit
+            time.sleep(3)
 
         total_pages = int(r.headers.get("X-WP-TotalPages", page))
         if page >= total_pages:
