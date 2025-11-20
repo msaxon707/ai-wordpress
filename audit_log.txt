@@ -1,0 +1,144 @@
+"""
+One-time WordPress post fixer.
+Runs once, fixes excerpts, meta, images, internal + affiliate links.
+Logs everything to /app/audit_log.txt
+Safe to delete after running.
+"""
+
+import os, json, requests, openai
+from datetime import datetime
+from affiliate_injector import inject_affiliate_links, load_affiliate_products
+from ai_product_recommender import generate_product_suggestions, create_amazon_links
+from image_handler import get_featured_image_id
+from wordpress_client import WordPressClient
+
+# === ENVIRONMENT ===
+BASE = os.getenv("WP_BASE_URL").rstrip("/")
+USERNAME = os.getenv("WP_USERNAME")
+APP_PASS = os.getenv("WP_APP_PASSWORD")
+openai.api_key = os.getenv("OPENAI_API_KEY")
+MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+
+# === LOGGING ===
+LOG_FILE = "/app/audit_log.txt"
+def log(msg):
+    with open(LOG_FILE, "a") as f:
+        f.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}\n")
+    print(msg)
+
+# === HELPERS ===
+def generate_excerpt(content, title):
+    prompt = f"Write a concise, SEO-friendly 2-sentence excerpt for a blog post titled '{title}'."
+    try:
+        resp = openai.chat.completions.create(
+            model=MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=120,
+        )
+        return resp.choices[0].message.content.strip()
+    except Exception as e:
+        log(f"[WARN] Excerpt generation failed: {e}")
+        return content[:200] + "..."
+
+def generate_meta(title):
+    prompt = f"Generate SEO title and meta description for a post titled '{title}'. Return JSON with keys 'title' and 'description'."
+    try:
+        resp = openai.chat.completions.create(
+            model=MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=150,
+        )
+        text = resp.choices[0].message.content.strip()
+        start, end = text.find("{"), text.rfind("}")
+        if start != -1 and end != -1:
+            text = text[start:end+1]
+        data = json.loads(text)
+        return data.get("title", title), data.get("description", "")
+    except Exception as e:
+        log(f"[WARN] Meta generation failed: {e}")
+        return title, f"Explore {title} guides and inspiration from The Saxon Blog."
+
+# === MAIN FIX SCRIPT ===
+def main():
+    client = WordPressClient()
+    page, per_page = 1, 25
+    products = load_affiliate_products()
+
+    while True:
+        url = f"{BASE}/wp-json/wp/v2/posts?status=publish&per_page={per_page}&page={page}"
+        r = requests.get(url, auth=(USERNAME, APP_PASS))
+        if r.status_code == 400:
+            log("[DONE] No more posts found. Exiting.")
+            break
+        r.raise_for_status()
+        posts = r.json()
+        if not posts:
+            log("[DONE] Empty batch. Exiting.")
+            break
+
+        for p in posts:
+            pid, title = p["id"], p["title"]["rendered"]
+            content = p["content"]["rendered"]
+            changed = []
+
+            # === 1️⃣ FEATURED IMAGE ===
+            if not p.get("featured_media") or p["featured_media"] == 0:
+                media_id = get_featured_image_id(title)
+                if media_id:
+                    client.session.put(f"{client.api_url}/posts/{pid}",
+                        json={"featured_media": media_id}, timeout=20)
+                    changed.append("featured_image")
+
+            # === 2️⃣ EXCERPT ===
+            if not p.get("excerpt") or not p["excerpt"]["rendered"].strip():
+                excerpt = generate_excerpt(content, title)
+                client.session.put(f"{client.api_url}/posts/{pid}",
+                    json={"excerpt": excerpt}, timeout=20)
+                changed.append("excerpt")
+
+            # === 3️⃣ META DATA ===
+            meta_title, meta_desc = generate_meta(title)
+            client.session.put(f"{client.api_url}/posts/{pid}",
+                json={"meta": {"_yoast_wpseo_title": meta_title, "_yoast_wpseo_metadesc": meta_desc}},
+                timeout=20)
+            changed.append("meta")
+
+            # === 4️⃣ AFFILIATE LINKS ===
+            product_names = generate_product_suggestions(content)
+            dynamic_products = create_amazon_links(product_names)
+            all_products = dynamic_products + products
+            updated_content = inject_affiliate_links(content, all_products)
+
+            # === 5️⃣ INTERNAL LINKS (SAME CATEGORY) ===
+            cats = p.get("categories", [])
+            if cats:
+                cat_id = cats[0]
+                try:
+                    related = requests.get(
+                        f"{BASE}/wp-json/wp/v2/posts?categories={cat_id}&per_page=3",
+                        auth=(USERNAME, APP_PASS)
+                    ).json()
+                    for rpost in related:
+                        if rpost["id"] != pid:
+                            link = rpost["link"]
+                            if link not in updated_content:
+                                updated_content += f'<p>Related: <a href="{link}">{rpost["title"]["rendered"]}</a></p>'
+                except Exception as e:
+                    log(f"[WARN] Internal link fetch failed: {e}")
+
+            client.session.put(f"{client.api_url}/posts/{pid}",
+                json={"content": updated_content}, timeout=30)
+            changed.append("links")
+
+            if changed:
+                log(f"[FIXED] Post {pid} ({title}): {', '.join(changed)}")
+
+        total_pages = int(r.headers.get("X-WP-TotalPages", page))
+        if page >= total_pages:
+            break
+        page += 1
+
+    log("[COMPLETE] All posts processed successfully.")
+
+if __name__ == "__main__":
+    main()
