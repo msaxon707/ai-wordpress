@@ -1,108 +1,65 @@
-import os
+# ai_script.py
 from openai import OpenAI
-from config import OPENAI_MODEL
-from affiliate_injector import load_affiliate_products, inject_affiliate_links
-from ai_product_recommender import generate_product_suggestions, create_amazon_links
-from image_handler import get_featured_image_id
-from wordpress_client import post_to_wordpress
-from topic_generator import generate_topic
+import random
+import re
+import time
+from logger_setup import setup_logger
 from category_detector import detect_category
-from content_normalizer import normalize_content
+from config import Config
 
+logger = setup_logger()
+client = OpenAI()
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-client = OpenAI(api_key=OPENAI_API_KEY)
+EXTERNAL_LINKS = [
+    "https://www.outdoorlife.com/",
+    "https://www.countryliving.com/",
+    "https://www.fieldandstream.com/",
+]
 
+def generate_article(topic: str, internal_links: list[str]) -> tuple[str, str, dict]:
+    """Generate a complete SEO-optimized article with links and meta tags."""
+    for attempt in range(3):
+        try:
+            include_affiliate = random.random() < Config.AFFILIATE_RATIO
+            affiliate_text = (
+                "\n\nIf you're looking for the best rustic gear and home essentials, "
+                "check out our favorites [here](https://amzn.to/affiliate)."
+                if include_affiliate else ""
+            )
 
-def generate_article(topic):
-    """Generate SEO-optimized article text using OpenAI."""
-    print(f"[ai_script] Generating article for topic: {topic}")
+            prompt = f"""
+            Write a 900-word SEO-optimized blog post titled '{topic}'.
+            Include a strong H1 title, keyword-rich H2/H3s, and natural keyword placement.
+            Add 2 internal links to these: {internal_links}.
+            Add 2 external links from: {EXTERNAL_LINKS}.
+            Maintain a warm, rustic, country-living tone.
+            End with a call to action or reflection.
+            {affiliate_text}
+            """
 
-    prompt = f"""
-    Write a detailed, SEO-optimized blog post about "{topic}".
-    You are an expert lifestyle and outdoors blogger who writes with personality and warmth.
-    Include natural affiliate product mentions (e.g., “I recommend checking out …”).
-    Focus on storytelling, practical advice, and conversational tone.
-    Avoid using placeholders like [HEAD], [META], or [BODY].
-    Output the full article ready for a WordPress post.
-    """
+            response = client.chat.completions.create(
+                model=Config.OPENAI_MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.9
+            )
 
-    response = client.chat.completions.create(
-        model=OPENAI_MODEL,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.9,
-        max_tokens=1200,
-    )
+            content = response.choices[0].message.content.strip()
+            category = detect_category(content)
 
-    article_text = response.choices[0].message.content
-    return normalize_content(article_text)
+            # Extract SEO-friendly metadata
+            h1_match = re.search(r"^# (.+)$", content, re.MULTILINE)
+            title = h1_match.group(1) if h1_match else topic
+            seo_meta = {
+                "title": title,
+                "description": f"Learn about {topic.lower()} and rustic living tips from The Saxon Blog.",
+                "focus_keyphrase": topic.split()[0],
+            }
 
+            logger.info(f"📝 Article generated for topic: {topic} in category {category}")
+            return content, category, seo_meta
 
-def generate_meta(topic, article_text):
-    """Generate SEO meta title and description."""
-    prompt = f"""
-    Create an SEO title and meta description for a blog post about "{topic}".
-    Respond in JSON like this:
-    {{
-        "title": "string",
-        "description": "string"
-    }}
-    """
+        except Exception as e:
+            logger.error(f"Error generating article: {e}")
+            time.sleep(10)
 
-    try:
-        response = client.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.7,
-            max_tokens=150,
-        )
-        import json
-        meta = json.loads(response.choices[0].message.content)
-        return meta.get("title", topic), meta.get("description", "")
-    except Exception as e:
-        print(f"[WARN] Failed to generate meta: {e}")
-        return topic, ""
-
-
-def main():
-    print("[ai_script] === AI WordPress Post Generation Started ===")
-
-    topic = generate_topic()
-    print(f"[ai_script] Selected topic: {topic}")
-
-    article_text = generate_article(topic)
-
-    # Load products
-    static_products = load_affiliate_products()
-    suggested = generate_product_suggestions(article_text)
-    dynamic_products = create_amazon_links(suggested)
-    all_products = dynamic_products + static_products
-
-    # Inject links naturally
-    article_with_links = inject_affiliate_links(article_text, all_products)
-
-    # Detect category
-    category_id = detect_category(topic)
-    print(f"[ai_script] Detected category ID: {category_id}")
-
-    # Featured image
-    featured_image_id = get_featured_image_id(topic)
-
-    # Generate SEO meta
-    seo_title, seo_description = generate_meta(topic, article_with_links)
-
-    # Post to WordPress
-    post_id = post_to_wordpress(
-    title=seo_title,
-    content=article_with_links,
-    category_id=category_id,
-    featured_media_id=featured_image_id,
-    excerpt=seo_description,
-)
-
-    print(f"[ai_script] ✅ Successfully posted to WordPress (ID: {post_id})")
-    print("[ai_script] === Run complete. Safe to exit for cron. ===")
-
-
-if __name__ == "__main__":
-    main()
+    raise RuntimeError(f"❌ Failed to generate article for topic: {topic}")
