@@ -1,16 +1,17 @@
 # image_handler.py
-from openai import OpenAI
-from requests.auth import HTTPBasicAuth
+import openai
 import requests
 import base64
 import time
+from requests.auth import HTTPBasicAuth
 from logger_setup import setup_logger
+import os
 
 logger = setup_logger()
-client = OpenAI()
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 def generate_featured_image(topic: str, wp_credentials: HTTPBasicAuth, wp_base_url: str):
-    """Generate an AI image tailored to the blog topic and upload it to WordPress."""
+    """Generate a featured image for the post using OpenAI Image API (v1.3.7 compatible)."""
     prompt = (
         f"A high-quality rustic digital photograph that represents the theme: '{topic}'. "
         "Style: cozy country living, warm tones, farmhouse, natural lighting."
@@ -19,12 +20,13 @@ def generate_featured_image(topic: str, wp_credentials: HTTPBasicAuth, wp_base_u
     for attempt in range(3):
         try:
             logger.info(f"🎨 Generating featured image for topic: {topic}")
-            result = client.images.generate(
-                model="gpt-image-1-mini",
+            result = openai.Image.create(
                 prompt=prompt,
-                size="1024x1024"
+                n=1,
+                size="1024x1024",
+                response_format="b64_json"
             )
-            image_data = base64.b64decode(result.data[0].b64_json)
+            image_data = base64.b64decode(result["data"][0]["b64_json"])
             filename = f"{topic.replace(' ', '_')}.png"
             media_endpoint = f"{wp_base_url}/wp-json/wp/v2/media"
 
