@@ -1,79 +1,52 @@
-import os
-import logging
+# wordpress_client.py
 import requests
+from requests.auth import HTTPBasicAuth
+import time
+from logger_setup import setup_logger
 
-logger = logging.getLogger(__name__)
+logger = setup_logger()
 
-class WordPressClient:
-    def __init__(self):
-        self.base_url = os.getenv("WP_BASE_URL")
-        self.username = os.getenv("WP_USERNAME")
-        self.password = os.getenv("WP_APP_PASSWORD")
+def create_post(title, content, category, featured_image_id, seo_meta, wp_base_url, wp_user, wp_pass):
+    """Create and publish a post to WordPress with SEO metadata."""
+    category_endpoint = f"{wp_base_url}/wp-json/wp/v2/categories"
+    post_endpoint = f"{wp_base_url}/wp-json/wp/v2/posts"
 
-        if not all([self.base_url, self.username, self.password]):
-            raise ValueError("[ERROR] Missing WordPress credentials or base URL.")
+    try:
+        # Resolve category name to ID
+        cat_res = requests.get(category_endpoint, auth=HTTPBasicAuth(wp_user, wp_pass), timeout=30)
+        cat_res.raise_for_status()
+        categories = cat_res.json()
+        category_id = next((c["id"] for c in categories if c["name"].lower() == category.lower()), None)
 
-        self.api_url = f"{self.base_url.rstrip('/')}/wp-json/wp/v2"
-        self.session = requests.Session()
-        self.session.auth = (self.username, self.password)
-        self.timeout = 20
+        if not category_id:
+            logger.warning(f"⚠️ Category '{category}' not found. Defaulting to 'General'.")
+            category_id = next((c["id"] for c in categories if c["name"].lower() == "general"), 1)
 
-    def upload_media(self, image_bytes, filename, alt_text=None):
-        """Upload an image to WordPress media library."""
-        if not image_bytes:
-            return None
-
-        headers = {
-            "Content-Disposition": f'attachment; filename="{filename}"',
-            "Content-Type": "image/jpeg",
+        payload = {
+            "title": title,
+            "content": content,
+            "status": "publish",
+            "categories": [category_id],
+            "featured_media": featured_image_id,
+            "meta": {
+                "_aioseo_title": seo_meta["title"],
+                "_aioseo_description": seo_meta["description"],
+                "_aioseo_focuskw": seo_meta["focus_keyphrase"],
+            }
         }
 
-        try:
-            response = self.session.post(f"{self.api_url}/media", headers=headers, data=image_bytes, timeout=self.timeout)
-            if response.status_code not in (200, 201):
-                logger.error(f"Media upload failed: {response.status_code} {response.text}")
-                return None
+        post_res = requests.post(
+            post_endpoint,
+            auth=HTTPBasicAuth(wp_user, wp_pass),
+            json=payload,
+            timeout=60
+        )
 
-            media_id = response.json().get("id")
-            if alt_text:
-                self.session.post(f"{self.api_url}/media/{media_id}", json={"alt_text": alt_text, "title": alt_text}, timeout=self.timeout)
-            return media_id
-        except Exception as e:
-            logger.error(f"Media upload error: {e}")
-            return None
+        if post_res.status_code == 201:
+            logger.info(f"✅ Post '{title}' published successfully.")
+        else:
+            logger.error(f"❌ Failed to post: {post_res.status_code} | {post_res.text}")
 
-    def create_post(self, title, content, category_id=None, featured_media_id=None, excerpt=None, status="publish"):
-        """Create WordPress post with SEO excerpt."""
-        url = f"{self.api_url}/posts"
-        post_data = {
-            "title": title.strip(),
-            "content": content.strip(),
-            "status": status,
-            "excerpt": excerpt or "",
-            "categories": [category_id] if category_id else [],
-        }
-
-        if featured_media_id:
-            post_data["featured_media"] = featured_media_id
-
-        try:
-            response = self.session.post(url, json=post_data, timeout=self.timeout)
-            if response.status_code not in (200, 201):
-                logger.error(f"Post creation failed: {response.status_code} {response.text}")
-                return None
-            return response.json().get("id")
-        except Exception as e:
-            logger.error(f"Post creation error: {e}")
-            return None
-
-
-def post_to_wordpress(title, content, category_id=None, featured_media_id=None, excerpt=None):
-    """Simple wrapper for posting to WordPress."""
-    client = WordPressClient()
-    return client.create_post(
-        title=title,
-        content=content,
-        category_id=category_id,
-        featured_media_id=featured_media_id,
-        excerpt=excerpt
-    )
+    except Exception as e:
+        logger.error(f"Error creating WordPress post: {e}")
+        time.sleep(10)
