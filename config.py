@@ -1,32 +1,15 @@
+# config.py
 import os
-import sys
+from dotenv import load_dotenv
 
-# === OpenAI Settings ===
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+# Load environment variables from .env
+load_dotenv()
 
-# === WordPress Settings ===
-WP_BASE_URL = os.getenv("WP_BASE_URL")
-WP_USERNAME = os.getenv("WP_USERNAME")
-WP_APP_PASSWORD = os.getenv("WP_APP_PASSWORD")
-
-# === Image API Keys ===
-PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
-UNSPLASH_ACCESS_KEY = os.getenv("UNSPLASH_ACCESS_KEY")
-
-# === Validation ===
-missing = []
-if not OPENAI_API_KEY:
-    missing.append("OPENAI_API_KEY")
-if not WP_BASE_URL:
-    missing.append("WP_BASE_URL")
-if not WP_USERNAME:
-    missing.append("WP_USERNAME")
-if not WP_APP_PASSWORD:
-    missing.append("WP_APP_PASSWORD")
-
-if missing:
-    print(f"[config] ❌ Missing environment variables: {', '.join(missing)}")
-    sys.exit(1)
-
-print("[config] ✅ Environment variables loaded successfully.")
+class Config:
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+    OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    WP_BASE_URL = os.getenv("WP_BASE_URL")
+    WP_USERNAME = os.getenv("WP_USERNAME")
+    WP_APP_PASSWORD = os.getenv("WP_APP_PASSWORD")
+    AFFILIATE_RATIO = 0.75  # 75% of posts include affiliate links
+    LOG_FILE = "logs/app.log"
