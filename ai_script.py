@@ -3,7 +3,8 @@ import os
 import time
 import json
 import openai
-from config import OPENAI_MODEL
+from config import Config
+OPENAI_MODEL = Config.OPENAI_MODEL
 from affiliate_injector import load_affiliate_products, inject_affiliate_links
 from ai_product_recommender import generate_product_suggestions, create_amazon_links
 from image_handler import get_featured_image_id
