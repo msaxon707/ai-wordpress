@@ -1,40 +1,53 @@
+# topic_generator.py
+from openai import OpenAI
+import json
+import os
 import random
+import time
+from logger_setup import setup_logger
 
-def generate_topic():
-    """
-    Randomly selects a blog topic alternating between outdoors and decor content.
-    Ensures a 50/50 balance across posts.
-    """
+logger = setup_logger()
+client = OpenAI()
 
-    outdoors_topics = [
-        "Deer hunting strategies for beginners",
-        "Essential camping gear checklist for 2025",
-        "Top fishing techniques to catch more bass",
-        "Duck hunting tactics on a budget",
-        "How to prep for deer season like a pro",
-        "Backyard fire pit safety and setup tips",
-        "Choosing the best boots for long hunting trips",
-        "Hiking essentials for rugged terrain",
-        "How to cook outdoors: cast iron recipes",
-        "Survival gear every outdoorsman should carry"
-    ]
+HISTORY_FILE = "data/topic_history.json"
 
-    decor_topics = [
-        "Farmhouse kitchen decor ideas for a cozy home",
-        "Rustic living room design trends for 2025",
-        "How to create a country-style bedroom retreat",
-        "DIY reclaimed wood wall art project",
-        "Cozy cabin decorating ideas for fall",
-        "Rustic entryway inspiration for small spaces",
-        "Affordable country decor finds on Amazon",
-        "Tips for mixing modern and farmhouse style",
-        "How to decorate a porch for year-round charm",
-        "Best rustic lighting ideas for your home"
-    ]
+def load_history():
+    if os.path.exists(HISTORY_FILE):
+        with open(HISTORY_FILE, "r") as f:
+            return json.load(f)
+    return []
 
-    # 50/50 category choice
-    category_type = random.choice(["outdoors", "decor"])
-    topic = random.choice(outdoors_topics if category_type == "outdoors" else decor_topics)
+def save_history(history):
+    with open(HISTORY_FILE, "w") as f:
+        json.dump(history[-100:], f, indent=2)
 
-    print(f"[topic_generator] Selected '{category_type}' topic: {topic}")
-    return topic
+def generate_unique_topic():
+    """Generate a unique topic not in the recent history."""
+    for _ in range(3):  # Retry logic for API resilience
+        try:
+            history = load_history()
+            prompt = (
+                "Generate 10 unique, trending blog post ideas about "
+                "country living, rustic home decor, hunting, and outdoor life. "
+                "Avoid repeating any of these topics: " + ", ".join(history[-20:])
+            )
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=1.0
+            )
+            ideas = [
+                idea.strip("- ").strip()
+                for idea in response.choices[0].message.content.split("\n")
+                if idea.strip()
+            ]
+            new_topic = random.choice(ideas)
+            if new_topic not in history:
+                history.append(new_topic)
+                save_history(history)
+                logger.info(f"✅ New topic generated: {new_topic}")
+                return new_topic
+        except Exception as e:
+            logger.error(f"Error generating topic: {e}")
+            time.sleep(5)
+    raise RuntimeError("❌ Failed to generate topic after 3 attempts.")
