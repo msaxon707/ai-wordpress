@@ -1,5 +1,5 @@
 # topic_generator.py
-from openai import OpenAI
+import openai
 import json
 import os
 import random
@@ -7,7 +7,8 @@ import time
 from logger_setup import setup_logger
 
 logger = setup_logger()
-client = OpenAI()
+
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 HISTORY_FILE = "data/topic_history.json"
 
@@ -22,23 +23,26 @@ def save_history(history):
         json.dump(history[-100:], f, indent=2)
 
 def generate_unique_topic():
-    """Generate a unique topic not in the recent history."""
-    for _ in range(3):  # Retry logic for API resilience
+    """Generate a unique blog topic using OpenAI ChatCompletion (v1.3.7 compatible)."""
+    for _ in range(3):  # Retry up to 3 times
         try:
             history = load_history()
             prompt = (
                 "Generate 10 unique, trending blog post ideas about "
                 "country living, rustic home decor, hunting, and outdoor life. "
-                "Avoid repeating any of these topics: " + ", ".join(history[-20:])
+                "Avoid repeating any of these recent topics: " + ", ".join(history[-20:])
             )
-            response = client.chat.completions.create(
+
+            response = openai.ChatCompletion.create(
                 model="gpt-4o-mini",
                 messages=[{"role": "user", "content": prompt}],
-                temperature=1.0
+                temperature=1.0,
+                max_tokens=400
             )
+
             ideas = [
                 idea.strip("- ").strip()
-                for idea in response.choices[0].message.content.split("\n")
+                for idea in response["choices"][0]["message"]["content"].split("\n")
                 if idea.strip()
             ]
             new_topic = random.choice(ideas)
