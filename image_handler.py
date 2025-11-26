@@ -3,23 +3,22 @@ import openai
 import requests
 import base64
 import time
+import os
 from requests.auth import HTTPBasicAuth
 from logger_setup import setup_logger
-import os
 
 logger = setup_logger()
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
 def generate_featured_image(topic: str, wp_credentials: HTTPBasicAuth, wp_base_url: str):
-    """Generate a featured image for the post using OpenAI Image API (v1.3.7 compatible)."""
+    """Generate and upload AI image for post."""
     prompt = (
-        f"A high-quality rustic digital photograph that represents the theme: '{topic}'. "
-        "Style: cozy country living, warm tones, farmhouse, natural lighting."
+        f"A high-quality rustic photograph representing '{topic}', "
+        "style: warm farmhouse tones, natural lighting."
     )
 
     for attempt in range(3):
         try:
-            logger.info(f"🎨 Generating featured image for topic: {topic}")
             result = openai.Image.create(
                 prompt=prompt,
                 n=1,
@@ -40,12 +39,12 @@ def generate_featured_image(topic: str, wp_credentials: HTTPBasicAuth, wp_base_u
 
             if response.status_code == 201:
                 image_id = response.json()["id"]
-                logger.info(f"🖼️ Image uploaded successfully: {filename} (ID {image_id})")
+                logger.info(f"🖼️ Uploaded featured image: {filename} (ID: {image_id})")
                 return image_id
             else:
-                logger.error(f"❌ Failed to upload image: {response.text}")
+                logger.error(f"❌ Image upload failed: {response.text}")
                 time.sleep(5)
         except Exception as e:
-            logger.error(f"Error generating/uploading image: {e}")
+            logger.error(f"Error in image generation/upload: {e}")
             time.sleep(5)
     return None
