@@ -4,27 +4,28 @@ import time
 import json
 import openai
 from config import Config
-OPENAI_MODEL = Config.OPENAI_MODEL
 from affiliate_injector import load_affiliate_products, inject_affiliate_links
 from ai_product_recommender import generate_product_suggestions, create_amazon_links
-from image_handler import get_featured_image_id
+from image_handler import generate_featured_image
 from wordpress_client import post_to_wordpress
 from topic_generator import generate_topic
 from category_detector import detect_category
 from content_normalizer import normalize_content
 from logger_setup import setup_logger
+from requests.auth import HTTPBasicAuth
 
 logger = setup_logger()
 openai.api_key = os.getenv("OPENAI_API_KEY")
+OPENAI_MODEL = Config.OPENAI_MODEL
+
 
 def generate_article(topic):
     logger.info(f"Generating article for topic: {topic}")
     prompt = f"""
-    Write a long-form, SEO-optimized blog article on "{topic}".
-    The tone should be friendly, warm, and conversational — like a lifestyle magazine.
-    Use proper HTML headings (<h2>, <h3>) and paragraph tags.
-    Include short intros, subheadings, and a conclusion.
-    Do NOT use markdown (#) or code formatting. Output clean HTML only.
+    Write a detailed, SEO-optimized blog post about "{topic}".
+    Tone: friendly, helpful, and authentic — like a country lifestyle blogger.
+    Include headings (<h2>, <h3>), structured paragraphs (<p>), and practical advice.
+    Do NOT use markdown (#), placeholders, or code formatting. Return pure HTML only.
     """
 
     response = openai.ChatCompletion.create(
@@ -40,16 +41,15 @@ def generate_article(topic):
 def generate_meta(topic, article_text):
     prompt = f"""
     Create a JSON SEO metadata package for a blog titled "{topic}".
-    Use this content as reference:
+    Use this article as context:
     {article_text[:1000]}
     Respond strictly in JSON format:
     {{
-      "title": "SEO title string",
-      "description": "SEO description string",
-      "keywords": "comma-separated keywords"
+        "title": "SEO title",
+        "description": "SEO meta description",
+        "keywords": "comma,separated,keywords"
     }}
     """
-
     try:
         response = openai.ChatCompletion.create(
             model=OPENAI_MODEL,
@@ -60,12 +60,12 @@ def generate_meta(topic, article_text):
         meta = json.loads(response["choices"][0]["message"]["content"])
         return meta.get("title", topic), meta.get("description", ""), meta.get("keywords", "")
     except Exception as e:
-        logger.warning(f"Failed to generate meta data: {e}")
+        logger.warning(f"⚠️ SEO Meta Generation Failed: {e}")
         return topic, "", ""
 
 
 def add_affiliate_boxes(article_text, affiliate_products):
-    """Insert visually engaging affiliate product boxes into article."""
+    """Insert affiliate product boxes throughout the article."""
     if not affiliate_products:
         return article_text
 
@@ -76,15 +76,15 @@ def add_affiliate_boxes(article_text, affiliate_products):
         <a href="{url}" target="_blank" rel="nofollow sponsored">Check Price on Amazon</a>
     </div>
     """
-    insert_points = article_text.split("</p>")
+    paragraphs = article_text.split("</p>")
     for i, product in enumerate(affiliate_products[:3]):
-        if (i + 1) * 3 < len(insert_points):
-            insert_points.insert((i + 1) * 3, box_template.format(**product))
-    return "</p>".join(insert_points)
+        if (i + 1) * 3 < len(paragraphs):
+            paragraphs.insert((i + 1) * 3, box_template.format(**product))
+    return "</p>".join(paragraphs)
 
 
 def add_schema_markup(title, description, keywords):
-    """Add JSON-LD structured data for SEO rich results."""
+    """Add JSON-LD structured data for SEO-rich Google snippets."""
     schema = {
         "@context": "https://schema.org",
         "@type": "BlogPosting",
@@ -95,45 +95,47 @@ def add_schema_markup(title, description, keywords):
         "publisher": {
             "@type": "Organization",
             "name": "The Saxon Blog",
-            "logo": {"@type": "ImageObject", "url": "https://thesaxonblog.com/wp-content/uploads/logo.png"}
-        }
+            "logo": {
+                "@type": "ImageObject",
+                "url": "https://thesaxonblog.com/wp-content/uploads/logo.png"
+            }
+        },
     }
     return f'<script type="application/ld+json">{json.dumps(schema)}</script>'
 
 
 def main():
-    logger.info("=== AI WordPress AutoPost Started ===")
+    logger.info("=== 🚀 AI WordPress AutoPost Started ===")
     topic = generate_topic()
-    logger.info(f"Topic: {topic}")
+    logger.info(f"🧠 New Topic: {topic}")
 
-    # Generate article
+    # Step 1: Generate Article
     article_html = generate_article(topic)
 
-    # Gather affiliate products
+    # Step 2: Load and Generate Affiliate Products
     static_products = load_affiliate_products()
     suggested = generate_product_suggestions(article_html)
     dynamic_products = create_amazon_links(suggested)
     all_products = dynamic_products + static_products
 
-    # Inject affiliate links and product boxes
+    # Step 3: Add Affiliate Links + Boxes
     article_with_links = inject_affiliate_links(article_html, all_products)
     article_with_boxes = add_affiliate_boxes(article_with_links, all_products)
 
-    # Detect category
+    # Step 4: Determine Category
     category_id = detect_category(topic)
-    logger.info(f"Detected Category ID: {category_id}")
+    logger.info(f"📂 Assigned Category: {category_id}")
 
-    # Generate featured image
-    featured_image_id = get_featured_image_id(topic)
+    # Step 5: Generate Featured Image
+    wp_credentials = HTTPBasicAuth(Config.WP_USERNAME, Config.WP_APP_PASSWORD)
+    featured_image_id = generate_featured_image(topic, wp_credentials, Config.WP_BASE_URL)
 
-    # SEO metadata
+    # Step 6: SEO Meta + Schema
     seo_title, seo_description, seo_keywords = generate_meta(topic, article_with_boxes)
     schema_markup = add_schema_markup(seo_title, seo_description, seo_keywords)
-
-    # Combine schema + article
     final_content = f"{schema_markup}\n{article_with_boxes}"
 
-    # Post to WordPress
+    # Step 7: Post to WordPress
     post_id = post_to_wordpress(
         title=seo_title,
         content=final_content,
@@ -142,8 +144,12 @@ def main():
         excerpt=seo_description
     )
 
-    logger.info(f"✅ Successfully posted to WordPress (ID: {post_id})")
-    logger.info("⏱️ Sleeping for 1 hour before next post...")
+    if post_id:
+        logger.info(f"✅ Successfully published post (ID: {post_id})")
+    else:
+        logger.error("❌ Post failed to publish.")
+
+    logger.info("🕒 Sleeping for 1 hour before next post...")
     time.sleep(3600)
     main()
 
