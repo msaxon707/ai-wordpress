@@ -1,27 +1,19 @@
-import re
+# content_normalizer.py
+from bs4 import BeautifulSoup
 
-def normalize_content(text: str) -> str:
-    """Clean and format the AI-generated article into valid HTML for WordPress."""
-    if not text:
-        return ""
+def normalize_content(html_content: str) -> str:
+    """Clean up and format HTML output for WordPress posting."""
+    soup = BeautifulSoup(html_content, "html.parser")
 
-    # --- Remove placeholders like [HEAD], [META], [BODY] ---
-    text = re.sub(r'\[(HEAD|META|TITLE|BODY)\]', '', text, flags=re.IGNORECASE)
+    # Ensure paragraphs and spacing
+    for tag in soup.find_all(["p", "h2", "h3"]):
+        if not tag.text.strip():
+            tag.decompose()
 
-    # --- Fix headings ---
-    text = re.sub(r'###\s*(.+)', r'<h3>\1</h3>', text)
-    text = re.sub(r'##\s*(.+)', r'<h2>\1</h2>', text)
-    text = re.sub(r'#\s*(.+)', r'<h1>\1</h1>', text)
+    # Add <p> where missing
+    for text in soup.find_all(string=True):
+        if text.parent.name not in ["p", "h1", "h2", "h3", "a"]:
+            text.replace_with(f"<p>{text}</p>")
 
-    # --- Clean markdown links and ensure plain text URLs stay visible ---
-    text = re.sub(r'\[(.*?)\]\((.*?)\)', r'<a href="\2">\1</a>', text)
-
-    # --- Wrap paragraphs in <p> tags ---
-    parts = [p.strip() for p in text.split('\n') if p.strip()]
-    html = ''.join(f"<p>{p}</p>" for p in parts)
-
-    # --- Final cleanup ---
-    html = re.sub(r'<p>\s*</p>', '', html)
-    html = re.sub(r'\s+', ' ', html)
-
-    return html.strip()
+    clean_html = str(soup)
+    return clean_html.strip()
