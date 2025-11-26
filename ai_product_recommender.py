@@ -1,81 +1,44 @@
+# ai_product_recommender.py
 import os
-from openai import OpenAI
+import openai
+from logger_setup import setup_logger
 
-# === Environment Variables ===
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-AFFILIATE_TAG = "thesaxonblog01-20"
-
-# === OpenAI Client Initialization ===
-client = OpenAI(api_key=OPENAI_API_KEY)
+logger = setup_logger()
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 
 def generate_product_suggestions(article_text):
-    """
-    Uses AI to extract 3–6 relevant physical product ideas from the given article text.
-    Works for both decor and outdoor topics.
-    """
+    """Generate affiliate product ideas based on the article content."""
     prompt = f"""
-    You are a product recommendation assistant.
-    From the following article, extract 3 to 6 relevant product ideas
-    that a reader might be interested in buying.
-    Focus on real, physical items (not abstract concepts or experiences).
-    Return a plain list, one item per line. No numbers, no extra words.
+    Suggest 3 specific Amazon-style products related to this article:
 
-    ARTICLE:
-    {article_text}
+    {article_text[:1500]}
+
+    Respond in JSON format:
+    [
+        {{"name": "Product Name", "description": "Short appealing description"}}
+    ]
     """
-
     try:
-        response = client.chat.completions.create(
-            model=OPENAI_MODEL,
+        response = openai.ChatCompletion.create(
+            model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=150,
-            temperature=0.7
+            temperature=0.8,
+            max_tokens=350
         )
-
-        raw_output = response.choices[0].message.content
-        product_names = [
-            p.strip("•-– \n").lower()
-            for p in raw_output.split("\n")
-            if p.strip()
-        ]
-
-        # Remove duplicates and blanks
-        clean = []
-        for p in product_names:
-            if p and p not in clean:
-                clean.append(p)
-        return clean
-
+        import json
+        products = json.loads(response["choices"][0]["message"]["content"])
+        logger.info(f"🛒 Generated {len(products)} product ideas.")
+        return products
     except Exception as e:
-        print(f"[ERROR] Failed to generate product suggestions: {e}")
+        logger.error(f"Error generating product suggestions: {e}")
         return []
 
 
-def create_amazon_links(product_names):
-    """
-    Convert product names into working Amazon affiliate search URLs.
-    Example: "camping stove" -> "https://www.amazon.com/s?k=camping+stove&tag=thesaxonblog01-20"
-    """
-    links = []
-    for name in product_names:
-        if not name:
-            continue
-        formatted = name.replace(" ", "+")
-        url = f"https://www.amazon.com/s?k={formatted}&tag={AFFILIATE_TAG}"
-        links.append({
-            "name": name.title(),
-            "url": url
-        })
-    return links
-
-
-if __name__ == "__main__":
-    # Quick test
-    test_text = "I love decorating my porch with rustic lights and cozy furniture."
-    products = generate_product_suggestions(test_text)
-    links = create_amazon_links(products)
-    print(products)
-    for l in links:
-        print(l)
+def create_amazon_links(products):
+    """Attach an Amazon affiliate link to each product."""
+    linked = []
+    for p in products:
+        p["url"] = f"https://www.amazon.com/s?k={p['name'].replace(' ', '+')}&tag=affiliatecode-20"
+        linked.append(p)
+    return linked
