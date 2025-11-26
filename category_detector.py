@@ -1,16 +1,15 @@
 # category_detector.py
 def detect_category(content: str) -> str:
-    """Simple category detector with weighted keyword matching."""
+    """Detect category from article content."""
     content_lower = content.lower()
-    if any(word in content_lower for word in ["hunt", "rifle", "bow", "deer"]):
+    if any(w in content_lower for w in ["hunt", "rifle", "bow", "deer"]):
         return "Outdoors"
-    elif any(word in content_lower for word in ["decor", "wall", "farmhouse", "style"]):
+    if any(w in content_lower for w in ["decor", "farmhouse", "wall", "style"]):
         return "Home Decor"
-    elif any(word in content_lower for word in ["recipe", "cook", "grill", "meal"]):
+    if any(w in content_lower for w in ["recipe", "cook", "meal", "kitchen"]):
         return "Recipes"
-    elif any(word in content_lower for word in ["garden", "soil", "harvest", "plant"]):
+    if any(w in content_lower for w in ["garden", "soil", "plants", "harvest"]):
         return "Gardening"
-    elif any(word in content_lower for word in ["farm", "homestead", "ranch"]):
+    if any(w in content_lower for w in ["farm", "ranch", "homestead"]):
         return "Country Living"
-    else:
-        return "General"
+    return "General"
