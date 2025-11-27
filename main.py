@@ -1,7 +1,7 @@
 # main.py
 import time
 from config import Config
-from topic_generator import generate_unique_topic
+from topic_generator import generate_topic
 from ai_script import generate_article
 from image_handler import generate_featured_image
 from wordpress_client import create_post
