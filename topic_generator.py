@@ -1,89 +1,88 @@
-import os
-import httpx
+"""
+topic_generator.py — Generates unique blog topics using OpenAI
+for the Saxon Blog niche: hunting, outdoors, decor, recipes, gifts, etc.
+"""
+
 import json
-import time
-from logger_setup import setup_logger
+import os
+from openai import OpenAI
+from config import OPENAI_API_KEY, OPENAI_MODEL, MAX_TOPIC_HISTORY
 
-# === CONFIG ===
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-
-API_URL = "https://api.openai.com/v1/chat/completions"
-HEADERS = {
-    "Authorization": f"Bearer {OPENAI_API_KEY}",
-    "Content-Type": "application/json"
-}
-
-logger = setup_logger()
+client = OpenAI(api_key=OPENAI_API_KEY)
 HISTORY_FILE = "data/topic_history.json"
 
+CATEGORIES = [
+    "Hunting Tips & Tactics",
+    "Hunting Gear & Guns",
+    "Hunting Dogs & Training",
+    "Fishing & Lakes",
+    "Camping & Outdoor Adventures",
+    "Country Recipes & Cooking",
+    "Country Home Decor & Lifestyle",
+    "Clothing, Boots & Camo",
+    "Tools & Outdoor Equipment",
+    "Gifts & Holiday Ideas",
+    "Scouting & Trailing Deer",
+    "Nature & Country Living"
+]
 
-# === Helper Functions ===
-def load_history():
-    """Load previously used topics to avoid duplicates."""
-    if os.path.exists(HISTORY_FILE):
-        with open(HISTORY_FILE, "r") as f:
-            return json.load(f)
-    return []
+
+def load_topic_history():
+    if not os.path.exists(HISTORY_FILE):
+        return []
+    with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 
-def save_history(topics):
-    """Save generated topics for deduplication."""
+def save_topic_history(history):
     os.makedirs(os.path.dirname(HISTORY_FILE), exist_ok=True)
-    with open(HISTORY_FILE, "w") as f:
-        json.dump(topics, f, indent=2)
+    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+        json.dump(history[-MAX_TOPIC_HISTORY:], f, indent=2)
 
 
-def generate_topic(max_retries=3, retry_delay=10):
-    """
-    Generate a unique SEO-friendly topic related to country living, home decor,
-    and outdoor lifestyle. Retries automatically if API fails.
-    """
-    history = load_history()
-    attempt = 0
+def generate_topic():
+    """Generate a unique topic from OpenAI for the Saxon Blog."""
+    history = load_topic_history()
 
-    prompt = (
-        "Generate one unique, SEO-friendly blog post topic related to "
-        "home decor, outdoor living, or rustic country lifestyle. "
-        "Make it engaging, descriptive, and never duplicate a topic "
-        "you’ve used before. Respond with only the topic title."
+    prompt = f"""
+You are an expert content strategist for a blog about hunting, outdoors, decor, and country living.
+Generate 5 fresh, unique blog post ideas that fit one or more of these main categories:
+
+{', '.join(CATEGORIES)}
+
+Each topic should:
+- Be under 120 characters.
+- Be engaging and specific.
+- Avoid repeating recent themes.
+- Sound natural, friendly, and human (not clickbait).
+
+Return ONLY a JSON list of strings, no extra commentary.
+"""
+
+    response = client.chat.completions.create(
+        model=OPENAI_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.7,
+        max_tokens=400,
+        response_format={"type": "json_object"}
     )
 
-    payload = {
-        "model": OPENAI_MODEL,
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.7,
-        "max_tokens": 100
-    }
+    try:
+        result = json.loads(response.choices[0].message.content)
+        topics = result.get("topics", [])
+    except Exception:
+        # fallback if OpenAI returns text instead of JSON
+        text = response.choices[0].message.content.strip()
+        topics = [line.strip("•- ") for line in text.split("\n") if line.strip()]
 
-    while attempt < max_retries:
-        try:
-            response = httpx.post(API_URL, headers=HEADERS, json=payload, timeout=60)
-            response.raise_for_status()
+    # Filter out duplicates
+    topics = [t for t in topics if t not in history]
 
-            data = response.json()
-            topic = data["choices"][0]["message"]["content"].strip()
+    if not topics:
+        raise RuntimeError("No new unique topics could be generated. Try increasing temperature or clearing history.")
 
-            # Avoid duplicates
-            if topic in history:
-                logger.warning("⚠️ Duplicate topic detected. Retrying...")
-                time.sleep(2)
-                attempt += 1
-                continue
-
-            history.append(topic)
-            save_history(history)
-            logger.info(f"✅ New topic generated: {topic}")
-            return topic
-
-        except Exception as e:
-            attempt += 1
-            logger.error(f"Error generating topic (Attempt {attempt}/{max_retries}): {e}")
-            time.sleep(retry_delay)
-
-    logger.error("❌ Failed to generate topic after multiple retries.")
-    return None
-
-
-if __name__ == "__main__":
-    print(generate_topic())
+    new_topic = topics[0]
+    history.append(new_topic)
+    save_topic_history(history)
+    print(f"[topic_generator] ✅ New topic generated: {new_topic}")
+    return new_topic
