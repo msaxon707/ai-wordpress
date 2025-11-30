@@ -1,38 +1,30 @@
-# config.py
+"""
+config.py — Centralized environment configuration for AI WordPress autoposter.
+Compatible with Coolify (no .env file required).
+"""
+
 import os
-from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
+# === OPENAI CONFIG ===
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
-class Config:
-    """
-    Central configuration for AI WordPress automation.
-    Pulls all keys from .env or environment variables on your Coolify server.
-    """
+# === AMAZON AFFILIATE CONFIG ===
+# Amazon tag should be set in Coolify as: AMAZON_TAG=thesaxonblog01-20
+AMAZON_TAG = os.getenv("AMAZON_TAG", "thesaxonblog01-20")
 
-    # --- OpenAI Configuration ---
-    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-    OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+# === WORDPRESS CONFIG ===
+WP_BASE_URL = os.getenv("WP_BASE_URL", "https://thesaxonblog.com")
+WP_USERNAME = os.getenv("WP_USERNAME", "megansaxon9@gmail.com")
+WP_APP_PASSWORD = os.getenv("WP_APP_PASSWORD")
 
-    # --- WordPress Configuration ---
-    WP_BASE_URL = os.getenv("WP_BASE_URL", "https://thesaxonblog.com")
-    WP_USERNAME = os.getenv("WP_USERNAME", "")
-    WP_APP_PASSWORD = os.getenv("WP_APP_PASSWORD", "")
+# === SYSTEM CONFIG ===
+POST_INTERVAL_HOURS = int(os.getenv("POST_INTERVAL_HOURS", 1))  # one post per hour
+MAX_TOPIC_HISTORY = 200  # prevent repeats
+IMAGE_STYLE = os.getenv("IMAGE_STYLE", "rustic country photography, natural lighting")
 
-    # --- Affiliate Config ---
-    AMAZON_TAG = os.getenv("AMAZON_TAG", "affiliatecode-20")
+# === SANITY CHECK ===
+if not all([OPENAI_API_KEY, WP_APP_PASSWORD]):
+    raise EnvironmentError("❌ Missing critical environment variables. Please check Coolify settings.")
 
-    # --- Optional: External Image APIs (if fallback needed) ---
-    PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
-    UNSPLASH_ACCESS_KEY = os.getenv("UNSPLASH_ACCESS_KEY")
-
-    # --- Logging & Directory Settings ---
-    LOG_DIR = os.getenv("LOG_DIR", "./logs")
-    DATA_DIR = os.getenv("DATA_DIR", "./data")
-
-    @classmethod
-    def ensure_directories(cls):
-        """Ensure required folders exist."""
-        os.makedirs(cls.LOG_DIR, exist_ok=True)
-        os.makedirs(cls.DATA_DIR, exist_ok=True)
+print("[config] Environment loaded successfully. Running on Coolify mode.")
