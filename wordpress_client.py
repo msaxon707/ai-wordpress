@@ -18,7 +18,7 @@ def post_to_wordpress(title, content, category_id, featured_media_id, excerpt):
         "title": title,
         "content": content,
         "status": "publish",
-        "categories": [category_id],
+        "categories": [_get_category_id(category_id, wp_base_url, wp_user, wp_pass)],
         "featured_media": featured_media_id,
         "excerpt": excerpt,
     }
