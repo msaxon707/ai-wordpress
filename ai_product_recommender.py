@@ -1,105 +1,57 @@
-import os
-import httpx
+"""
+ai_product_recommender.py — Generates Amazon product ideas and affiliate links
+for each article using OpenAI and your Amazon Associate Tag.
+"""
+
 import json
-import time
-from logger_setup import setup_logger
+import os
+from openai import OpenAI
+from config import OPENAI_API_KEY, OPENAI_MODEL, AMAZON_TAG
 
-# === CONFIG ===
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-
-API_URL = "https://api.openai.com/v1/chat/completions"
-HEADERS = {
-    "Authorization": f"Bearer {OPENAI_API_KEY}",
-    "Content-Type": "application/json"
-}
-
-logger = setup_logger()
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 
-def openai_chat(prompt, max_tokens=600, temperature=0.7, retries=3, delay=8):
-    """Send chat prompt to OpenAI with retry logic."""
-    payload = {
-        "model": OPENAI_MODEL,
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": temperature,
-        "max_tokens": max_tokens,
-    }
-
-    for attempt in range(1, retries + 1):
-        try:
-            response = httpx.post(API_URL, headers=HEADERS, json=payload, timeout=60)
-            response.raise_for_status()
-            data = response.json()
-            return data["choices"][0]["message"]["content"].strip()
-
-        except Exception as e:
-            logger.warning(f"⚠️ OpenAI product suggestion attempt {attempt}/{retries} failed: {e}")
-            if attempt < retries:
-                time.sleep(delay)
-            else:
-                logger.error("❌ OpenAI product suggestion failed after multiple retries.")
-                return None
-
-
-# === PRODUCT RECOMMENDER ===
-def generate_product_suggestions(article_text):
-    """
-    Generate contextual product ideas based on the article text.
-    The AI analyzes the content and recommends affiliate-suitable items.
-    """
-    logger.info("[ai_product_recommender] Generating AI-based product suggestions...")
-    
+def generate_product_suggestions(article_text: str):
+    """Ask OpenAI for 3 brand-specific product suggestions based on the article."""
     prompt = f"""
-    Analyze the following blog article and suggest 3-5 affiliate product ideas
-    that would naturally fit within it. Choose items that readers would likely
-    be interested in buying based on the topic context.
+Based on this article:
 
-    Article:
-    {article_text[:2500]}
+{article_text[:2000]}
 
-    Return your response in JSON as a list of objects:
-    [
-      {{"name": "Rustic Wall Shelf", "category": "Home Decor"}},
-      {{"name": "Mason Jar Chandelier", "category": "Lighting"}}
-    ]
-    """
-
-    suggestions_raw = openai_chat(prompt)
-    if not suggestions_raw:
-        return []
+Suggest 3 Amazon products that would be highly relevant to readers.
+- Include real brands if possible (YETI, Carhartt, Lodge, etc.).
+- Each should be 3–8 words long.
+- Return ONLY JSON in this format:
+{{"products": ["product1", "product2", "product3"]}}
+"""
 
     try:
-        suggestions = json.loads(suggestions_raw)
-        logger.info(f"✅ AI suggested {len(suggestions)} relevant products.")
-        return suggestions
+        response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            max_tokens=300,
+            response_format={"type": "json_object"}
+        )
+
+        content = response.choices[0].message.content
+        products = json.loads(content).get("products", [])
+        if not products:
+            raise ValueError("Empty product list.")
+        return products
+
     except Exception as e:
-        logger.warning(f"⚠️ Failed to parse product suggestions JSON: {e}")
-        return []
+        print(f"[ai_product_recommender] ⚠️ Failed to parse product suggestions: {e}")
+        # Fallback list
+        return ["YETI Rambler Mug", "Carhartt Work Jacket", "Lodge Cast Iron Skillet"]
 
 
-# === AMAZON LINK BUILDER ===
 def create_amazon_links(products):
-    """
-    Converts AI product suggestions into simple Amazon affiliate-style links.
-    Replace 'YOURTAG-20' with your actual Amazon Associates tag if desired.
-    """
-    logger.info("[ai_product_recommender] Creating Amazon-style links...")
-    amazon_affiliate_tag = os.getenv("AMAZON_TAG", "YOURTAG-20")
-    base_url = "https://www.amazon.com/s?k="
-
+    """Turn product names into Amazon affiliate links."""
     links = []
-    for product in products:
-        if isinstance(product, dict) and "name" in product:
-            query = product["name"].replace(" ", "+")
-            link = f"{base_url}{query}&tag={amazon_affiliate_tag}"
-            links.append({"name": product["name"], "link": link})
-
-    logger.info(f"🔗 Created {len(links)} Amazon-style product links.")
+    for p in products:
+        query = p.replace(" ", "+")
+        link = f"https://www.amazon.com/s?k={query}&tag={AMAZON_TAG}"
+        links.append({"name": p, "url": link})
+    print(f"[ai_product_recommender] 🔗 Created {len(links)} Amazon affiliate links.")
     return links
-
-
-if __name__ == "__main__":
-    test_text = "This article discusses how to decorate a rustic farmhouse kitchen using reclaimed wood and cozy lighting."
-    suggestions = generate_product_suggestions(test_text)
-    print(create_amazon_links(suggestions))
