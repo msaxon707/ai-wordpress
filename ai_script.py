@@ -1,140 +1,163 @@
 import os
-import time
+import httpx
 import json
-from openai import OpenAI
-from config import Config
+import time
 from affiliate_injector import load_affiliate_products, inject_affiliate_links
 from ai_product_recommender import generate_product_suggestions, create_amazon_links
-from image_handler import generate_featured_image
+from image_handler import get_featured_image_id
 from wordpress_client import post_to_wordpress
 from topic_generator import generate_topic
 from category_detector import detect_category
 from content_normalizer import normalize_content
 from logger_setup import setup_logger
-from requests.auth import HTTPBasicAuth
+
+# === CONFIG ===
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+
+API_URL = "https://api.openai.com/v1/chat/completions"
+HEADERS = {
+    "Authorization": f"Bearer {OPENAI_API_KEY}",
+    "Content-Type": "application/json"
+}
 
 logger = setup_logger()
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-OPENAI_MODEL = Config.OPENAI_MODEL
 
+
+# === AI Helper ===
+def openai_chat(prompt, max_tokens=1500, temperature=0.7, retries=3, delay=10):
+    """Send prompt to OpenAI with retries and return the text output."""
+    payload = {
+        "model": OPENAI_MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
+
+    for attempt in range(1, retries + 1):
+        try:
+            response = httpx.post(API_URL, headers=HEADERS, json=payload, timeout=120)
+            response.raise_for_status()
+            data = response.json()
+            return data["choices"][0]["message"]["content"].strip()
+
+        except Exception as e:
+            logger.warning(f"⚠️ OpenAI request failed (Attempt {attempt}/{retries}): {e}")
+            if attempt < retries:
+                time.sleep(delay)
+            else:
+                logger.error("❌ OpenAI API failed after multiple attempts.")
+                return None
+
+
+# === Main AI Functions ===
 def generate_article(topic):
-    logger.info(f"Generating article for topic: {topic}")
+    """Generate SEO-optimized article text that sells affiliate links naturally."""
+    logger.info(f"[ai_script] Generating article for topic: {topic}")
+
     prompt = f"""
-    Write a detailed, SEO-optimized blog post about "{topic}".
-    Tone: friendly, helpful, and authentic — like a country lifestyle blogger.
-    Include headings (<h2>, <h3>), structured paragraphs (<p>), and practical advice.
-    Return HTML only (no markdown, no placeholders).
+    Write a detailed, SEO-optimized blog post about "{topic}" for The Saxon Blog.
+    The tone should be warm, helpful, and authentic — like a seasoned home decor
+    and country lifestyle blogger who subtly includes affiliate links.
+
+    STRUCTURE:
+    - Intro paragraph: relatable story or observation.
+    - 3–5 subheadings with practical advice or inspiration.
+    - Include at least 2 internal links to relevant blog categories.
+    - Include at least 2 external authoritative links (like Better Homes & Gardens, HGTV, etc.).
+    - Naturally mention affiliate product ideas — e.g. “I love this rustic planter I found here...”
+    - End with a short conclusion and friendly CTA (e.g. “Happy decorating!”).
+
+    SEO GOALS:
+    - Use relevant keywords naturally.
+    - Include 1 primary keyword in the title and subheadings.
+    - Keep sentences clear and easy to read.
     """
 
-    response = client.chat.completions.create(
-        model=OPENAI_MODEL,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.85,
-        max_tokens=1500
-    )
-    html_content = response.choices[0].message.content
-    return normalize_content(html_content)
+    article_text = openai_chat(prompt)
+    if not article_text:
+        logger.error("Failed to generate article text.")
+        return None
+
+    return normalize_content(article_text)
+
 
 def generate_meta(topic, article_text):
+    """Generate an SEO title and meta description for the article."""
     prompt = f"""
-    Create SEO metadata for a blog titled "{topic}".
-    Context:
-    {article_text[:1000]}
-    Respond strictly in JSON:
+    Create an SEO-friendly title and meta description for this blog post:
+
+    Topic: {topic}
+    Article: {article_text[:800]}
+
+    Return your response in JSON:
     {{
-        "title": "SEO title",
-        "description": "SEO meta description",
-        "keywords": "comma,separated,keywords"
+        "title": "string",
+        "description": "string"
     }}
     """
+
+    meta_raw = openai_chat(prompt, max_tokens=150)
+    if not meta_raw:
+        return topic, ""
+
     try:
-        response = client.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.7,
-            max_tokens=250
-        )
-        meta = json.loads(response.choices[0].message.content)
-        return meta.get("title", topic), meta.get("description", ""), meta.get("keywords", "")
-    except Exception as e:
-        logger.warning(f"⚠️ SEO Meta Generation Failed: {e}")
-        return topic, "", ""
+        meta = json.loads(meta_raw)
+        return meta.get("title", topic), meta.get("description", "")
+    except Exception:
+        logger.warning("⚠️ Failed to parse meta JSON. Using fallback title/desc.")
+        return topic, ""
 
-def add_affiliate_boxes(article_text, affiliate_products):
-    if not affiliate_products:
-        return article_text
-    box_template = """
-    <div class="affiliate-box" style="border:1px solid #ccc;padding:10px;margin:20px 0;border-radius:8px;">
-        <h3>Recommended Product: {name}</h3>
-        <p>{description}</p>
-        <a href="{url}" target="_blank" rel="nofollow sponsored">Check Price on Amazon</a>
-    </div>
-    """
-    paragraphs = article_text.split("</p>")
-    for i, product in enumerate(affiliate_products[:3]):
-        if (i + 1) * 3 < len(paragraphs):
-            paragraphs.insert((i + 1) * 3, box_template.format(**product))
-    return "</p>".join(paragraphs)
 
-def add_schema_markup(title, description, keywords):
-    schema = {
-        "@context": "https://schema.org",
-        "@type": "BlogPosting",
-        "headline": title,
-        "description": description,
-        "keywords": keywords,
-        "author": {"@type": "Person", "name": "The Saxon Blog"},
-        "publisher": {
-            "@type": "Organization",
-            "name": "The Saxon Blog",
-            "logo": {
-                "@type": "ImageObject",
-                "url": "https://thesaxonblog.com/wp-content/uploads/logo.png"
-            }
-        },
-    }
-    return f'<script type="application/ld+json">{json.dumps(schema)}</script>'
-
+# === MAIN PUBLISHER ===
 def main():
-    logger.info("=== 🚀 AI WordPress AutoPost Started ===")
-    topic = generate_topic()
-    logger.info(f"🧠 New Topic: {topic}")
+    logger.info("[ai_script] === AI WordPress AutoPublisher Started ===")
 
-    article_html = generate_article(topic)
+    # 1. Generate topic
+    topic = generate_topic()
+    if not topic:
+        logger.error("❌ Could not generate topic. Exiting.")
+        return
+
+    # 2. Generate article text
+    article_text = generate_article(topic)
+    if not article_text:
+        return
+
+    # 3. Affiliate product integration
     static_products = load_affiliate_products()
-    suggested = generate_product_suggestions(article_html)
+    suggested = generate_product_suggestions(article_text)
     dynamic_products = create_amazon_links(suggested)
     all_products = dynamic_products + static_products
 
-    article_with_links = inject_affiliate_links(article_html, all_products)
-    article_with_boxes = add_affiliate_boxes(article_with_links, all_products)
+    article_with_links = inject_affiliate_links(article_text, all_products)
 
+    # 4. Detect category
     category_id = detect_category(topic)
-    logger.info(f"📂 Assigned Category: {category_id}")
+    logger.info(f"[ai_script] Detected category ID: {category_id}")
 
-    wp_credentials = HTTPBasicAuth(Config.WP_USERNAME, Config.WP_APP_PASSWORD)
-    featured_image_id = generate_featured_image(topic, wp_credentials, Config.WP_BASE_URL)
+    # 5. Featured image
+    featured_image_id = get_featured_image_id(topic)
 
-    seo_title, seo_description, seo_keywords = generate_meta(topic, article_with_boxes)
-    schema_markup = add_schema_markup(seo_title, seo_description, seo_keywords)
-    final_content = f"{schema_markup}\n{article_with_boxes}"
+    # 6. Generate SEO metadata
+    seo_title, seo_description = generate_meta(topic, article_with_links)
 
+    # 7. Publish to WordPress
     post_id = post_to_wordpress(
         title=seo_title,
-        content=final_content,
+        content=article_with_links,
         category_id=category_id,
         featured_media_id=featured_image_id,
-        excerpt=seo_description
+        excerpt=seo_description,
     )
 
     if post_id:
-        logger.info(f"✅ Successfully published post (ID: {post_id})")
+        logger.info(f"✅ Successfully published post ID: {post_id}")
     else:
         logger.error("❌ Post failed to publish.")
 
-    logger.info("🕒 Sleeping for 1 hour before next post...")
-    time.sleep(3600)
-    main()
+    logger.info("[ai_script] === Cycle Complete — Sleeping until next cron ===")
+
 
 if __name__ == "__main__":
     main()
