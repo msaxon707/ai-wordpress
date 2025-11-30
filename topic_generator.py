@@ -1,5 +1,4 @@
-# topic_generator.py
-import openai
+from openai import OpenAI
 import os
 import json
 import random
@@ -7,8 +6,7 @@ import time
 from logger_setup import setup_logger
 
 logger = setup_logger()
-openai.api_key = os.getenv("OPENAI_API_KEY")
-
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 HISTORY_FILE = "data/topic_history.json"
 
 def load_history():
@@ -31,15 +29,17 @@ def generate_topic():
                 "country living, rustic decor, or outdoors. "
                 "Avoid these recent topics: " + ", ".join(history[-20:])
             )
-            response = openai.ChatCompletion.create(
+
+            response = client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=1.0,
                 max_tokens=400
             )
+
             ideas = [
                 idea.strip("- ").strip()
-                for idea in response["choices"][0]["message"]["content"].split("\n")
+                for idea in response.choices[0].message.content.split("\n")
                 if idea.strip()
             ]
             new_topic = random.choice(ideas)
