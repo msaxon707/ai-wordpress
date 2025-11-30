@@ -5,6 +5,37 @@ from requests.auth import HTTPBasicAuth
 from logger_setup import setup_logger
 from config import Config
 
+def _get_category_id(category_name, wp_base_url, wp_user, wp_pass):
+    """Ensure we pass an integer ID to WordPress."""
+    import requests
+    from requests.auth import HTTPBasicAuth
+
+    # Fetch all categories
+    response = requests.get(
+        f"{wp_base_url}/wp-json/wp/v2/categories",
+        auth=HTTPBasicAuth(wp_user, wp_pass),
+        timeout=30
+    )
+    if response.status_code == 200:
+        categories = response.json()
+        for cat in categories:
+            if cat["name"].lower() == category_name.lower():
+                return cat["id"]
+
+    # If not found, create it
+    payload = {"name": category_name}
+    response = requests.post(
+        f"{wp_base_url}/wp-json/wp/v2/categories",
+        auth=HTTPBasicAuth(wp_user, wp_pass),
+        json=payload,
+        timeout=30
+    )
+    if response.status_code == 201:
+        return response.json()["id"]
+    else:
+        return 1  # default fallback to category ID 1
+
+
 logger = setup_logger()
 
 def post_to_wordpress(title, content, category_id, featured_media_id, excerpt):
