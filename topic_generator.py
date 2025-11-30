@@ -1,6 +1,7 @@
 import os
 import httpx
 import json
+import time
 from logger_setup import setup_logger
 
 # === CONFIG ===
@@ -33,41 +34,55 @@ def save_history(topics):
         json.dump(topics, f, indent=2)
 
 
-def generate_topic():
-    """Generate a unique, SEO-friendly blog topic via OpenAI HTTP API."""
+def generate_topic(max_retries=3, retry_delay=10):
+    """
+    Generate a unique SEO-friendly topic related to country living, home decor,
+    and outdoor lifestyle. Retries automatically if API fails.
+    """
     history = load_history()
+    attempt = 0
 
     prompt = (
-        "Generate one unique, SEO-friendly blog topic about home decor, "
-        "outdoor lifestyle, or country living. Avoid repetition. "
-        "Respond only with the topic title."
+        "Generate one unique, SEO-friendly blog post topic related to "
+        "home decor, outdoor living, or rustic country lifestyle. "
+        "Make it engaging, descriptive, and never duplicate a topic "
+        "you’ve used before. Respond with only the topic title."
     )
 
     payload = {
         "model": OPENAI_MODEL,
         "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.9,
-        "max_tokens": 100,
+        "temperature": 0.7,
+        "max_tokens": 100
     }
 
-    try:
-        response = httpx.post(API_URL, headers=HEADERS, json=payload, timeout=60)
-        response.raise_for_status()
-        topic = response.json()["choices"][0]["message"]["content"].strip()
+    while attempt < max_retries:
+        try:
+            response = httpx.post(API_URL, headers=HEADERS, json=payload, timeout=60)
+            response.raise_for_status()
 
-        # Avoid duplicates
-        if topic in history:
-            logger.warning("⚠️ Duplicate topic detected. Generating another...")
-            return generate_topic()
+            data = response.json()
+            topic = data["choices"][0]["message"]["content"].strip()
 
-        history.append(topic)
-        save_history(history)
-        logger.info(f"✅ New topic: {topic}")
-        return topic
+            # Avoid duplicates
+            if topic in history:
+                logger.warning("⚠️ Duplicate topic detected. Retrying...")
+                time.sleep(2)
+                attempt += 1
+                continue
 
-    except Exception as e:
-        logger.error(f"Error generating topic: {e}")
-        return None
+            history.append(topic)
+            save_history(history)
+            logger.info(f"✅ New topic generated: {topic}")
+            return topic
+
+        except Exception as e:
+            attempt += 1
+            logger.error(f"Error generating topic (Attempt {attempt}/{max_retries}): {e}")
+            time.sleep(retry_delay)
+
+    logger.error("❌ Failed to generate topic after multiple retries.")
+    return None
 
 
 if __name__ == "__main__":
