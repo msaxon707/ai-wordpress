@@ -1,96 +1,72 @@
-import re
+import random
 from openai import OpenAI
 from config import OPENAI_API_KEY, OPENAI_MODEL
-from logger_setup import setup_logger
-from content_normalizer import normalize_content
-from ai_product_recommender import generate_product_suggestions, create_amazon_links
 from affiliate_injector import inject_affiliate_links
-from wordpress_client import get_recent_posts, post_to_wordpress
+from ai_product_recommender import generate_product_suggestions, create_amazon_links
 from image_handler import get_featured_image_id
+from wordpress_client import post_to_wordpress
+from topic_generator import generate_topic
 from category_detector import detect_category
+from content_normalizer import normalize_content
+from logger_setup import setup_logger
 
 logger = setup_logger()
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-def generate_article(topic: str) -> str:
-    """Generate SEO-optimized article text."""
+def generate_article(topic):
+    """Use OpenAI to create a full SEO blog post."""
     logger.info(f"[ai_script] Generating article for topic: {topic}")
-
     prompt = f"""
-    Write a detailed, SEO-optimized blog post about "{topic}".
-    Tone: friendly, conversational, and written by a country/outdoors enthusiast.
-    Include natural product mentions where relevant (no hashtags).
-    Use proper HTML headings (<h2>, <h3>), lists, and strong tags.
+    Write a long, friendly, SEO-optimized blog post about: {topic}.
+    Tone: Country/outdoors expert giving real advice.
+    Include practical examples, affiliate mentions, and tips.
+    Avoid hashtags, use HTML for headings and lists.
     """
-
-    response = client.chat.completions.create(
+    completion = client.chat.completions.create(
         model=OPENAI_MODEL,
         messages=[{"role": "user", "content": prompt}],
         temperature=0.8,
-        max_tokens=1500,
+        max_tokens=1200,
     )
+    return normalize_content(completion.choices[0].message.content)
 
-    article = response.choices[0].message.content.strip()
-    return normalize_content(article)
-
-def generate_meta(topic: str, article_text: str):
-    """Generate meta title and description for SEO."""
-    prompt = f"""
-    Write an SEO-friendly title and meta description for this article:
-    Topic: {topic}
-    Content: {article_text[:400]}
-    Respond in JSON: {{ "title": "...", "description": "..." }}
-    """
-
+def generate_meta(topic, article):
+    """Generate SEO title and meta description."""
+    prompt = f"Generate an SEO title and meta description for '{topic}'. Respond JSON: {{'title': '', 'description': ''}}"
     try:
-        response = client.chat.completions.create(
+        r = client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.7,
-            max_tokens=150,
+            temperature=0.6,
+            max_tokens=120,
         )
-        text = response.choices[0].message.content
-        match = re.search(r'"title"\s*:\s*"([^"]+)"\s*,\s*"description"\s*:\s*"([^"]+)"', text)
-        if match:
-            return match.group(1), match.group(2)
+        import json
+        meta = json.loads(r.choices[0].message.content)
+        return meta.get("title", topic), meta.get("description", "")
     except Exception as e:
-        logger.warning(f"[SEO META] Fallback used — {e}")
-    return topic, f"Learn about {topic} and more country lifestyle insights."
+        logger.warning(f"[Meta] Failed JSON parse: {e}")
+        return topic, ""
 
-def add_internal_links(content: str):
-    """Fetch recent posts from WordPress and insert 2 internal links."""
-    try:
-        posts = get_recent_posts(limit=5)
-        if not posts:
-            return content
-        import random
-        picks = random.sample(posts, min(2, len(posts)))
-        for post in picks:
-            link_html = f'<a href="{post["link"]}" target="_blank">{post["title"]["rendered"]}</a>'
-            content += f"<p>Read next: {link_html}</p>"
-        return content
-    except Exception as e:
-        logger.warning(f"[Internal Linking] Skipped — {e}")
-        return content
-
-def build_post(topic: str):
-    """Main build routine to generate and post full article."""
+def build_post():
+    """Generate and post a complete article."""
+    topic = generate_topic()
     article = generate_article(topic)
-    products = generate_product_suggestions(article)
-    links = create_amazon_links(products)
-    article_with_links = inject_affiliate_links(article, links)
-    article_final = add_internal_links(article_with_links)
 
-    category = detect_category(topic)
+    # product links
+    suggested = generate_product_suggestions(article)
+    amazon_links = create_amazon_links(suggested)
+    article_with_links = inject_affiliate_links(article, amazon_links)
+
+    # category + image + meta
+    category_id = detect_category(topic)
     image_id = get_featured_image_id(topic)
-    seo_title, seo_desc = generate_meta(topic, article_final)
+    title, desc = generate_meta(topic, article_with_links)
 
     post_to_wordpress(
-        title=seo_title,
-        content=article_final,
-        category_id=category,
+        title=title,
+        content=article_with_links,
+        category_id=category_id,
         featured_media_id=image_id,
-        excerpt=seo_desc,
+        excerpt=desc,
     )
-
-    logger.info(f"✅ Successfully published: {seo_title}")
+    logger.info(f"[ai_script] ✅ Post completed: {title}")
