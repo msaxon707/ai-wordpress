@@ -1,19 +1,13 @@
-# content_normalizer.py
-from bs4 import BeautifulSoup
+import re
 
-def normalize_content(html_content: str) -> str:
-    """Clean up and format HTML output for WordPress posting."""
-    soup = BeautifulSoup(html_content, "html.parser")
+def normalize_content(content: str) -> str:
+    """Clean up AI-generated HTML and ensure SEO-friendly formatting."""
+    content = re.sub(r"\n{3,}", "\n\n", content)
+    content = re.sub(r"(#+\s)", "<h2>", content)
+    content = re.sub(r"\*\*(.*?)\*\*", r"<strong>\1</strong>", content)
+    content = content.replace("#", "").replace("**", "")
+    content = content.strip()
 
-    # Ensure paragraphs and spacing
-    for tag in soup.find_all(["p", "h2", "h3"]):
-        if not tag.text.strip():
-            tag.decompose()
-
-    # Add <p> where missing
-    for text in soup.find_all(string=True):
-        if text.parent.name not in ["p", "h1", "h2", "h3", "a"]:
-            text.replace_with(f"<p>{text}</p>")
-
-    clean_html = str(soup)
-    return clean_html.strip()
+    if not content.startswith("<p>"):
+        content = f"<p>{content}</p>"
+    return content
