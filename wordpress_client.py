@@ -1,32 +1,36 @@
-"""
-wordpress_client.py — Handles publishing posts to WordPress with SEO data.
-"""
-
 import requests
 from config import WP_BASE_URL, WP_USERNAME, WP_APP_PASSWORD
+from logger_setup import setup_logger
 
+logger = setup_logger()
+auth = (WP_USERNAME, WP_APP_PASSWORD)
 
-def post_to_wordpress(title, content, category, featured_media_id, excerpt):
-    """Publish post to WordPress via REST API."""
-    data = {
-        "title": title,
-        "content": content,
-        "status": "publish",
-        "excerpt": excerpt,
-        "categories": [],
-        "featured_media": featured_media_id
-    }
+def get_recent_posts(limit=5):
+    """Fetch recent published posts for internal linking."""
+    try:
+        url = f"{WP_BASE_URL}/wp-json/wp/v2/posts?per_page={limit}&status=publish"
+        res = requests.get(url, auth=auth, timeout=15)
+        res.raise_for_status()
+        return res.json()
+    except Exception as e:
+        logger.warning(f"[WP Fetch] Failed: {e}")
+        return []
 
-    response = requests.post(
-        f"{WP_BASE_URL}/wp-json/wp/v2/posts",
-        auth=(WP_USERNAME, WP_APP_PASSWORD),
-        json=data
-    )
-
-    if response.status_code in [200, 201]:
-        post_id = response.json().get("id")
-        print(f"[wordpress_client] ✅ Post '{title}' published successfully (ID: {post_id})")
-        return post_id
-
-    print(f"[wordpress_client] ❌ Failed to publish post: {response.status_code} - {response.text}")
-    return None
+def post_to_wordpress(title, content, category_id, featured_media_id, excerpt):
+    """Publish a new post."""
+    try:
+        data = {
+            "title": title,
+            "content": content,
+            "status": "publish",
+            "categories": [category_id],
+            "featured_media": featured_media_id,
+            "excerpt": excerpt,
+        }
+        res = requests.post(f"{WP_BASE_URL}/wp-json/wp/v2/posts", auth=auth, json=data)
+        res.raise_for_status()
+        logger.info(f"✅ Post '{title}' published successfully (ID {res.json().get('id')})")
+        return res.json().get("id")
+    except Exception as e:
+        logger.error(f"❌ WordPress Error: {e}")
+        return None
