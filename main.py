@@ -13,7 +13,7 @@ def main(test_mode=False):
     try:
         topic = generate_topic()
         logger.info(f"🧠 Topic Selected: {topic}")
-        build_post(topic)
+        build_post()
     except Exception as e:
         logger.error(f"Unexpected error: {e}")
     finally:
