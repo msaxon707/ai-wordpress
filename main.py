@@ -1,37 +1,28 @@
-"""
-main.py — Main runner for AI autoposter (Coolify-friendly)
-"""
-
 import time
 import argparse
 from topic_generator import generate_topic
 from ai_script import build_post
 from config import POST_INTERVAL_HOURS
+from logger_setup import setup_logger
 
+logger = setup_logger()
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--test", action="store_true", help="Run a single test post.")
-    args = parser.parse_args()
+def main(test_mode=False):
+    logger.info("=== AI AutoPublisher Started ===")
 
-    print("=== AI AutoPublisher Started ===")
-
-    if args.test:
+    try:
         topic = generate_topic()
+        logger.info(f"🧠 Topic Selected: {topic}")
         build_post(topic)
-        print("✅ Test post complete.")
-        return
-
-    while True:
-        try:
-            topic = generate_topic()
-            build_post(topic)
-            print("✅ Published new article successfully.")
-        except Exception as e:
-            print(f"❌ Error in main loop: {e}")
-        print(f"⏱️ Sleeping for {POST_INTERVAL_HOURS} hours before next post...")
-        time.sleep(POST_INTERVAL_HOURS * 3600)
-
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+    finally:
+        if not test_mode:
+            logger.info(f"⏱️ Sleeping for {POST_INTERVAL_HOURS} hour(s) before next post...")
+            time.sleep(POST_INTERVAL_HOURS * 3600)
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--test", action="store_true", help="Run one post and exit.")
+    args = parser.parse_args()
+    main(test_mode=args.test)
