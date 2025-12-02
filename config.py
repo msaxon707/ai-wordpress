@@ -28,6 +28,11 @@ AMAZON_TAG = os.getenv("AMAZON_TAG", "megansaxon9-20")
 POST_INTERVAL_HOURS = int(os.getenv("POST_INTERVAL_HOURS", "1"))
 TOPIC_TEMPERATURE = float(os.getenv("TOPIC_TEMPERATURE", "0.7"))
 
+# ========== DATA DIRECTORY ==========
+# This is where we store topic history, logs, etc.
+DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
+os.makedirs(DATA_DIR, exist_ok=True)
+
 # Mode
 IS_COOLIFY = True
 print("[config] Environment loaded successfully. Running on Coolify mode.")
