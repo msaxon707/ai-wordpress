@@ -39,8 +39,19 @@ def upload_to_wordpress(image_data, filename):
         return None
 
 def get_featured_image_id(topic):
-    image_data = generate_image(topic)
+    """Generate and upload a clean DALL·E image."""
+    # Clean up messy text (remove markdown, quotes, and newlines)
+    import re
+    clean_topic = re.sub(r'[\*\n\r\"“”‘’]+', '', topic).strip()
+    clean_topic = re.sub(r'[^a-zA-Z0-9 _-]', '', clean_topic)
+    clean_topic = "_".join(clean_topic.split())[:80]  # limit filename length
+
+    logger.info(f"🎨 Generating featured image for: {clean_topic}")
+
+    image_data = generate_image(clean_topic)
     if not image_data:
+        logger.warning("⚠️ No image data generated.")
         return None
-    filename = f"{topic.replace(' ', '_')}.png"
+
+    filename = f"{clean_topic}.png"
     return upload_to_wordpress(image_data, filename)
