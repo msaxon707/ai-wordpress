@@ -1,40 +1,40 @@
 """
-image_handler.py — Generates AI images with DALL·E and uploads to WordPress.
+image_handler.py — Generates and uploads post images using DALL·E.
 """
 
 import io
 import base64
 import requests
 from openai import OpenAI
-from config import OPENAI_API_KEY, WP_BASE_URL, WP_USERNAME, WP_APP_PASSWORD, IMAGE_STYLE
+from config import OPENAI_MODEL, WP_BASE_URL, WP_USERNAME, WP_APP_PASSWORD
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+client = OpenAI()
 
 
-def generate_featured_image(topic):
-    prompt = f"{topic}, {IMAGE_STYLE}"
+def generate_image(topic):
+    prompt = f"A realistic rustic country-style photo related to: {topic}."
     result = client.images.generate(model="gpt-image-1", prompt=prompt, size="1024x1024")
-    image_data = base64.b64decode(result.data[0].b64_json)
-    return io.BytesIO(image_data)
+    image_base64 = result.data[0].b64_json
+    return base64.b64decode(image_base64)
 
 
-def upload_image_to_wordpress(image_stream, filename):
-    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
-    r = requests.post(
-        f"{WP_BASE_URL}/wp-json/wp/v2/media",
+def upload_image_to_wordpress(image_bytes, filename):
+    url = f"{WP_BASE_URL}/wp-json/wp/v2/media"
+    headers = {"Content-Disposition": f"attachment; filename={filename}"}
+    response = requests.post(
+        url,
         headers=headers,
+        data=image_bytes,
         auth=(WP_USERNAME, WP_APP_PASSWORD),
-        files={"file": (filename, image_stream, "image/png")}
+        timeout=60,
     )
-    if r.status_code == 201:
-        image_id = r.json()["id"]
-        print(f"[image_handler] 🖼️ Uploaded featured image: {filename} (ID: {image_id})")
-        return image_id
-    print(f"[image_handler] ⚠️ Failed to upload image: {r.status_code}")
-    return None
+    response.raise_for_status()
+    return response.json().get("id")
 
 
 def get_featured_image_id(topic):
-    image_stream = generate_featured_image(topic)
-    filename = topic.replace(" ", "_") + ".png"
-    return upload_image_to_wordpress(image_stream, filename)
+    image_bytes = generate_image(topic)
+    filename = f"{topic.replace(' ', '_')}.png"
+    image_id = upload_image_to_wordpress(image_bytes, filename)
+    print(f"[image_handler] 🖼️ Uploaded image {filename} (ID {image_id})")
+    return image_id
