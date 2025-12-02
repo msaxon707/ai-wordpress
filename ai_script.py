@@ -60,18 +60,26 @@ Respond ONLY in JSON format like:
 
 def main_generate(topic):
     """Generate and publish a complete post for the given topic."""
+    print(f"[ai_script] 🚀 Starting post generation for topic: {topic}")
+
+    # Generate main article content
     article = generate_article(topic)
 
-    products = load_affiliate_products()
-    suggested = generate_product_suggestions(article)
-    links = create_amazon_links(suggested)
-    combined = links + products
+    # Generate AI-based product suggestions
+    suggested_products = generate_product_suggestions(article)
+    amazon_links = create_amazon_links(suggested_products)
 
-    article_with_links = inject_affiliate_links(article, combined)
+    # Combine and insert affiliate links into article
+    article_with_links = inject_affiliate_links(article, amazon_links)
+
+    # Detect category and generate featured image
     category = detect_category(topic)
     featured_image = get_featured_image_id(topic)
+
+    # Generate SEO meta title + description
     seo_title, seo_desc = generate_meta(topic, article_with_links)
 
+    # Publish to WordPress
     post_to_wordpress(
         title=seo_title,
         content=article_with_links,
@@ -81,3 +89,4 @@ def main_generate(topic):
     )
 
     print(f"[ai_script] ✅ Posted successfully: {seo_title}")
+
