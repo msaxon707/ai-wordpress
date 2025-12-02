@@ -1,18 +1,19 @@
 """
 topic_generator.py — Dynamically generates unique, niche-relevant blog post topics.
-Compatible with OpenAI >= 1.0 and Coolify environment setup.
+Fully compatible with OpenAI >= 1.13 and Coolify environments.
 """
 
 import os
 import json
 import random
 from openai import OpenAI
-from config import OPENAI_API_KEY, OPENAI_MODEL, TOPIC_TEMPERATURE
+from config import OPENAI_MODEL, TOPIC_TEMPERATURE
 
 DATA_DIR = "/app/data"
 TOPIC_HISTORY_FILE = os.path.join(DATA_DIR, "topic_history.json")
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+# ✅ Modern initialization (no proxy error)
+client = OpenAI()
 
 CATEGORIES = [
     "Hunting Tips & Tactics",
@@ -31,39 +32,38 @@ CATEGORIES = [
 
 
 def load_topic_history():
-    """Load or create topic history file."""
     os.makedirs(DATA_DIR, exist_ok=True)
     if not os.path.exists(TOPIC_HISTORY_FILE):
         with open(TOPIC_HISTORY_FILE, "w") as f:
             json.dump([], f)
-        return []
-    try:
-        with open(TOPIC_HISTORY_FILE, "r") as f:
+    with open(TOPIC_HISTORY_FILE, "r") as f:
+        try:
             return json.load(f)
-    except Exception:
-        return []
+        except json.JSONDecodeError:
+            return []
 
 
 def save_topic_history(history):
-    """Save list of used topics."""
     os.makedirs(DATA_DIR, exist_ok=True)
     with open(TOPIC_HISTORY_FILE, "w") as f:
         json.dump(history, f, indent=2)
 
 
 def generate_topic():
-    """Generate a brand-new unique topic."""
+    """Generate a unique, fresh blog post topic."""
     history = load_topic_history()
 
     prompt = f"""
-You are a creative blog topic generator for a country living, hunting, fishing, and outdoor lifestyle blog.
+You are a creative content generator for a country lifestyle and outdoors blog.
+Create 5 *brand-new* blog topics (SEO optimized) related to:
 
-Create 5 new and original blog topics that would appeal to readers interested in:
-- hunting, fishing, camping, cooking, country home decor, gifts, dogs, and outdoor life.
-- Each topic should be unique, SEO-optimized, and engaging.
-- Avoid repeating any of these topics:
-{history[-100:]}  # last 100 topics for context
-- Return ONLY a numbered list of 5 new topics, no explanations or extra text.
+hunting, fishing, camping, cooking, home decor, country living, outdoor tools, gifts, and dogs.
+
+Avoid duplicates of these recent topics:
+{history[-50:]}
+
+Each topic should be catchy, conversational, and relevant.
+Only output a simple numbered list of 5 topics.
 """
 
     try:
@@ -71,24 +71,23 @@ Create 5 new and original blog topics that would appeal to readers interested in
             model=OPENAI_MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=TOPIC_TEMPERATURE,
-            max_tokens=500
+            max_tokens=500,
         )
-
         content = response.choices[0].message.content.strip()
-        topics = [line.strip("1234567890. ").strip() for line in content.split("\n") if line.strip()]
+        topics = [t.strip("1234567890. ") for t in content.split("\n") if t.strip()]
         topics = [t for t in topics if t and t not in history]
 
         if not topics:
-            print("[topic_generator] ♻️ All topics used. Resetting history...")
-            save_topic_history([])  # Clear old history
+            print("[topic_generator] ♻️ No new topics. Clearing history...")
+            save_topic_history([])
             return generate_topic()
 
-        new_topic = random.choice(topics)
-        history.append(new_topic)
+        topic = random.choice(topics)
+        history.append(topic)
         save_topic_history(history)
-        print(f"[topic_generator] ✅ New topic generated: {new_topic}")
-        return new_topic
+        print(f"[topic_generator] ✅ New topic generated: {topic}")
+        return topic
 
     except Exception as e:
         print(f"[topic_generator] ❌ Error generating topic: {e}")
-        raise RuntimeError("Failed to generate new topics from OpenAI.") from e
+        raise RuntimeError("Failed to generate topic from OpenAI.") from e
