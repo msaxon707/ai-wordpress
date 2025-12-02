@@ -1,57 +1,43 @@
 """
-ai_product_recommender.py — Generates Amazon product ideas and affiliate links
-for each article using OpenAI and your Amazon Associate Tag.
+ai_product_recommender.py — Suggests and builds affiliate product links.
 """
 
-import json
 import os
+import json
 from openai import OpenAI
-from config import OPENAI_API_KEY, OPENAI_MODEL, AMAZON_TAG
+from config import OPENAI_MODEL, AMAZON_ASSOCIATE_TAG
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+client = OpenAI()
 
 
-def generate_product_suggestions(article_text: str):
-    """Ask OpenAI for 3 brand-specific product suggestions based on the article."""
+def generate_product_suggestions(article_text):
     prompt = f"""
-Based on this article:
-
-{article_text[:2000]}
-
-Suggest 3 Amazon products that would be highly relevant to readers.
-- Include real brands if possible (YETI, Carhartt, Lodge, etc.).
-- Each should be 3–8 words long.
-- Return ONLY JSON in this format:
-{{"products": ["product1", "product2", "product3"]}}
+Based on the following article, suggest 3 relevant Amazon product ideas.
+Each should match the tone and subject (e.g., hunting gear, decor, cooking tools, etc.).
+Output in plain JSON format:
+["product name 1", "product name 2", "product name 3"]
+Article:
+{article_text[:1000]}
 """
 
     try:
         response = client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.7,
-            max_tokens=300,
-            response_format={"type": "json_object"}
+            temperature=0.6,
+            max_tokens=250,
         )
-
-        content = response.choices[0].message.content
-        products = json.loads(content).get("products", [])
-        if not products:
-            raise ValueError("Empty product list.")
-        return products
-
-    except Exception as e:
-        print(f"[ai_product_recommender] ⚠️ Failed to parse product suggestions: {e}")
-        # Fallback list
-        return ["YETI Rambler Mug", "Carhartt Work Jacket", "Lodge Cast Iron Skillet"]
+        return json.loads(response.choices[0].message.content)
+    except Exception:
+        print("[ai_product_recommender] ⚠️ Using fallback products.")
+        return ["hunting backpack", "rustic lantern", "cast iron skillet"]
 
 
 def create_amazon_links(products):
-    """Turn product names into Amazon affiliate links."""
     links = []
     for p in products:
-        query = p.replace(" ", "+")
-        link = f"https://www.amazon.com/s?k={query}&tag={AMAZON_TAG}"
-        links.append({"name": p, "url": link})
-    print(f"[ai_product_recommender] 🔗 Created {len(links)} Amazon affiliate links.")
+        search_term = p.replace(" ", "+")
+        url = f"https://www.amazon.com/s?k={search_term}&tag={AMAZON_ASSOCIATE_TAG}"
+        links.append({"name": p, "url": url})
+    print(f"[ai_product_recommender] 🔗 Created {len(links)} Amazon links.")
     return links
