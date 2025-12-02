@@ -1,31 +1,34 @@
 import random
-import re
 from logger_setup import setup_logger
 
 logger = setup_logger()
 
 def inject_affiliate_links(content: str, products: list):
-    """Insert affiliate links naturally throughout the article at paragraph breaks."""
+    """Insert affiliate links naturally throughout the article and add a Recommended Gear section."""
     if not products:
         logger.warning("⚠️ No products provided to inject.")
         return content
 
-    # Split by paragraph for safer HTML injection
-    paragraphs = re.split(r'(</p>|<br\s*/?>)', content)
-    num_inserts = min(3, len(products))
-    insert_points = random.sample(range(1, len(paragraphs)), num_inserts)
+    # Inline placement (2–3 spots)
+    for product in random.sample(products, min(3, len(products))):
+        link_html = f'<a href="{product["url"]}" target="_blank" rel="nofollow noopener">{product["name"]}</a>'
+        sentences = content.split(". ")
+        insert_point = random.randint(1, len(sentences) - 1)
+        sentences.insert(insert_point, f"Check out {link_html} for more info.")
+        content = ". ".join(sentences)
 
-    for i, idx in enumerate(sorted(insert_points)):
-        if i < len(products):
-            product = products[i]
-            link_html = (
-                f'<p>Check out '
-                f'<a href="{product["url"]}" target="_blank" rel="nofollow noopener">'
-                f'{product["name"]}</a> for more info.</p>'
-            )
-            paragraphs.insert(idx, link_html)
+    # Recommended Gear section
+    gear_items = "\n".join(
+        [f'<li><a href="{p["url"]}" target="_blank" rel="nofollow noopener">{p["name"]}</a></li>'
+         for p in products]
+    )
 
-    combined = "".join(paragraphs)
+    gear_block = f"""
+    <h3>Recommended Gear</h3>
+    <ul>
+    {gear_items}
+    </ul>
+    """
 
-    logger.info(f"🔗 Inserted {num_inserts} affiliate links across the article.")
-    return combined
+    logger.info(f"🔗 Inserted {min(3, len(products))} inline links and added Recommended Gear section.")
+    return content + "\n\n" + gear_block
