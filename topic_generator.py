@@ -1,93 +1,49 @@
-"""
-topic_generator.py — Dynamically generates unique, niche-relevant blog post topics.
-Fully compatible with OpenAI >= 1.13 and Coolify environments.
-"""
-
 import os
 import json
 import random
 from openai import OpenAI
-from config import OPENAI_MODEL, TOPIC_TEMPERATURE
+from config import OPENAI_API_KEY, OPENAI_MODEL, TOPIC_TEMPERATURE, DATA_DIR
+from logger_setup import setup_logger
 
-DATA_DIR = "/app/data"
-TOPIC_HISTORY_FILE = os.path.join(DATA_DIR, "topic_history.json")
+logger = setup_logger()
+client = OpenAI(api_key=OPENAI_API_KEY)
 
-# ✅ Modern initialization (no proxy error)
-client = OpenAI()
+HISTORY_FILE = os.path.join(DATA_DIR, "topic_history.json")
 
-CATEGORIES = [
-    "Hunting Tips & Tactics",
-    "Hunting Gear & Guns",
-    "Hunting Dogs & Training",
-    "Fishing & Lakes",
-    "Camping & Outdoor Adventures",
-    "Country Recipes & Cooking",
-    "Country Home Decor & Lifestyle",
-    "Clothing, Boots & Camo",
-    "Tools & Outdoor Equipment",
-    "Gifts & Holiday Ideas",
-    "Scouting & Trailing Deer",
-    "Nature & Country Living"
-]
-
-
-def load_topic_history():
-    os.makedirs(DATA_DIR, exist_ok=True)
-    if not os.path.exists(TOPIC_HISTORY_FILE):
-        with open(TOPIC_HISTORY_FILE, "w") as f:
-            json.dump([], f)
-    with open(TOPIC_HISTORY_FILE, "r") as f:
-        try:
+def load_history():
+    if os.path.exists(HISTORY_FILE):
+        with open(HISTORY_FILE, "r") as f:
             return json.load(f)
-        except json.JSONDecodeError:
-            return []
+    return []
 
-
-def save_topic_history(history):
-    os.makedirs(DATA_DIR, exist_ok=True)
-    with open(TOPIC_HISTORY_FILE, "w") as f:
-        json.dump(history, f, indent=2)
-
+def save_history(history):
+    with open(HISTORY_FILE, "w") as f:
+        json.dump(history[-50:], f)  # keep last 50 for memory control
 
 def generate_topic():
-    """Generate a unique, fresh blog post topic."""
-    history = load_topic_history()
+    """Generate a new, niche-relevant topic avoiding duplicates."""
+    history = load_history()
+    logger.info("🧠 Generating fresh topic with OpenAI...")
 
-    prompt = f"""
-You are a creative content generator for a country lifestyle and outdoors blog.
-Create 5 *brand-new* blog topics (SEO optimized) related to:
+    prompt = """
+    You are a creative content generator for a country lifestyle and outdoors blog.
+    The blog covers hunting, country home decor, fishing, camping, cooking, and gift ideas.
+    Generate one unique, engaging blog topic that fits these themes.
+    Avoid repeating past ideas. Keep it SEO-friendly and natural.
+    """
 
-hunting, fishing, camping, cooking, home decor, country living, outdoor tools, gifts, and dogs.
+    response = client.chat.completions.create(
+        model=OPENAI_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=TOPIC_TEMPERATURE,
+        max_tokens=120,
+    )
 
-Avoid duplicates of these recent topics:
-{history[-50:]}
+    topic = response.choices[0].message.content.strip().strip('"')
+    if topic in history:
+        raise RuntimeError("Duplicate topic detected — retry later.")
 
-Each topic should be catchy, conversational, and relevant.
-Only output a simple numbered list of 5 topics.
-"""
-
-    try:
-        response = client.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=TOPIC_TEMPERATURE,
-            max_tokens=500,
-        )
-        content = response.choices[0].message.content.strip()
-        topics = [t.strip("1234567890. ") for t in content.split("\n") if t.strip()]
-        topics = [t for t in topics if t and t not in history]
-
-        if not topics:
-            print("[topic_generator] ♻️ No new topics. Clearing history...")
-            save_topic_history([])
-            return generate_topic()
-
-        topic = random.choice(topics)
-        history.append(topic)
-        save_topic_history(history)
-        print(f"[topic_generator] ✅ New topic generated: {topic}")
-        return topic
-
-    except Exception as e:
-        print(f"[topic_generator] ❌ Error generating topic: {e}")
-        raise RuntimeError("Failed to generate topic from OpenAI.") from e
+    history.append(topic)
+    save_history(history)
+    logger.info(f"✅ New topic generated: {topic}")
+    return topic
