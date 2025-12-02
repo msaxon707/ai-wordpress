@@ -6,7 +6,7 @@ import os
 from openai import OpenAI
 from config import OPENAI_MODEL
 from content_normalizer import normalize_content
-from affiliate_injector import inject_affiliate_links, load_affiliate_products
+from affiliate_injector import inject_affiliate_links
 from ai_product_recommender import generate_product_suggestions, create_amazon_links
 from wordpress_client import post_to_wordpress
 from image_handler import get_featured_image_id
