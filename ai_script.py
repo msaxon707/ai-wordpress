@@ -1,4 +1,3 @@
-import random
 import re
 import json
 from openai import OpenAI
@@ -16,58 +15,66 @@ logger = setup_logger()
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 
+def clean_topic(raw_topic):
+    """Extract title and description cleanly from AI topic output."""
+    title_match = re.search(r'Title[:：]?\s*["“]?([^"\n]+)', raw_topic)
+    desc_match = re.search(r'Description[:：]?\s*(.+)', raw_topic, re.DOTALL)
+
+    title = title_match.group(1).strip() if title_match else raw_topic.strip()
+    description = desc_match.group(1).strip() if desc_match else ""
+
+    # Clean up markdown and weird symbols
+    title = re.sub(r'[*#`>_\-]+', '', title)
+    description = re.sub(r'[*#`>_\-]+', '', description)
+    title = title.replace("\n", " ").strip()
+    description = description.replace("\n", " ").strip()
+
+    logger.info(f"🧠 Cleaned title: {title}")
+    logger.info(f"📝 Description extracted: {description[:100]}...")
+
+    return title, description
+
+
 def generate_article(topic):
     """Use OpenAI to create a full SEO-optimized blog post."""
     logger.info(f"[ai_script] Generating article for topic: {topic}")
-
     prompt = f"""
-    Write a long, friendly, SEO-optimized blog post about: {topic}.
+    Write a long, friendly, SEO-optimized blog post titled: '{topic}'.
     Tone: Country/outdoors expert giving real advice.
     Include practical examples, affiliate mentions, and tips.
     Avoid hashtags. Use valid HTML for headings, lists, and links.
     """
-
     completion = client.chat.completions.create(
         model=OPENAI_MODEL,
         messages=[{"role": "user", "content": prompt}],
         temperature=0.8,
         max_tokens=1200,
     )
-
-    article = completion.choices[0].message.content
-    article = normalize_content(article)
-
-    # 🧹 Clean any leftover markdown or weird symbols
-    article = re.sub(r'[*#`_>]+', '', article)
-    article = article.replace("\n\n", "\n").strip()
-
+    article = normalize_content(completion.choices[0].message.content)
+    article = re.sub(r'[*#`>_\-]+', '', article).strip()
     return article
 
 
-def generate_meta(topic, article):
+def generate_meta(topic, article, description_hint=""):
     """Generate SEO title and meta description."""
     prompt = (
-        f"Generate a concise SEO title and meta description for '{topic}'. "
-        f"Respond in JSON only, format: {{'title': '...', 'description': '...'}}"
+        f"Generate an SEO title and meta description for '{topic}'. "
+        f"Use this as context: {description_hint[:200]} "
+        "Respond in JSON format: {'title': '', 'description': ''}"
     )
     try:
-        response = client.chat.completions.create(
+        r = client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.6,
             max_tokens=150,
         )
-
-        raw = response.choices[0].message.content
+        raw = r.choices[0].message.content
         meta = json.loads(raw)
-
-        title = meta.get("title", topic)
-        desc = meta.get("description", "")
-
-        return title, desc
+        return meta.get("title", topic), meta.get("description", description_hint)
     except Exception as e:
         logger.warning(f"[Meta] Failed JSON parse: {e}")
-        return topic, ""
+        return topic, description_hint
 
 
 def build_post():
@@ -75,47 +82,30 @@ def build_post():
     try:
         logger.info("=== AI AutoPublisher Started ===")
 
-        # 🧠 Step 1: Generate topic
-        topic = generate_topic()
+        raw_topic = generate_topic()
+        title, desc_hint = clean_topic(raw_topic)
 
-        # 🧹 Clean markdown / symbols from topic
-        clean_topic = re.sub(r'[*#`>_\n]+', ' ', topic).strip()
-        clean_topic = re.sub(r'\s+', ' ', clean_topic)
-        logger.info(f"🧠 Clean topic selected: {clean_topic}")
-
-        # 📝 Step 2: Generate article content
-        article = generate_article(clean_topic)
-
-        # 🛒 Step 3: Add affiliate links
+        article = generate_article(title)
         suggested = generate_product_suggestions(article)
         amazon_links = create_amazon_links(suggested)
         article_with_links = inject_affiliate_links(article, amazon_links)
 
-        # 🏷️ Step 4: Determine category
-        category_id = detect_category(clean_topic)
+        category_id = detect_category(title)
+        image_id = get_featured_image_id(title)
+        seo_title, seo_desc = generate_meta(title, article_with_links, desc_hint)
 
-        # 🖼️ Step 5: Get or generate featured image
-        image_id = get_featured_image_id(clean_topic)
-        if not image_id:
-            logger.warning("⚠️ No image was uploaded; continuing without featured image.")
-
-        # 🧾 Step 6: Create SEO metadata
-        title, desc = generate_meta(clean_topic, article_with_links)
-
-        # 📰 Step 7: Publish to WordPress
         post_id = post_to_wordpress(
-            title=title,
+            title=seo_title,
             content=article_with_links,
             category_id=category_id,
             featured_media_id=image_id,
-            excerpt=desc,
+            excerpt=seo_desc,
         )
 
-        # 🔁 Step 8: Refresh SEO (All in One SEO)
         if post_id:
             refresh_aioseo(post_id)
 
-        logger.info(f"[ai_script] ✅ Post completed: {title}")
+        logger.info(f"[ai_script] ✅ Post completed: {seo_title}")
 
     except Exception as e:
         logger.error(f"Unexpected error: {e}")
