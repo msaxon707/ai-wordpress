@@ -35,30 +35,31 @@ def clean_topic(raw_topic):
     return title, description
 
 
-def generate_article(topic):
-    """Use OpenAI to create a full SEO-optimized blog post."""
-    logger.info(f"[ai_script] Generating article for topic: {topic}")
+def generate_article(title, description_hint=""):
+    """Use OpenAI to create a long, SEO-optimized blog post from the title."""
+    logger.info(f"[ai_script] Generating article for topic: {title}")
     prompt = f"""
-    Write a long, friendly, SEO-optimized blog post titled: '{topic}'.
-    Tone: Country/outdoors expert giving real advice.
-    Include practical examples, affiliate mentions, and tips.
-    Avoid hashtags. Use valid HTML for headings, lists, and links.
+    Write a detailed, SEO-optimized blog article titled "{title}".
+    Tone: friendly and practical, like an outdoors or country living expert.
+    Incorporate advice, examples, and affiliate mentions naturally.
+    Use proper HTML for headings (<h2>, <h3>), lists (<ul>, <li>), and links.
+    Avoid hashtags or markdown formatting.
+    Expand on this description if useful: {description_hint[:250]}.
     """
     completion = client.chat.completions.create(
         model=OPENAI_MODEL,
         messages=[{"role": "user", "content": prompt}],
-        temperature=0.8,
-        max_tokens=1200,
+        temperature=0.85,
+        max_tokens=1500,
     )
     article = normalize_content(completion.choices[0].message.content)
-    article = re.sub(r'[*#`>_\-]+', '', article).strip()
-    return article
+    return article.strip()
 
 
-def generate_meta(topic, article, description_hint=""):
+def generate_meta(title, article, description_hint=""):
     """Generate SEO title and meta description."""
     prompt = (
-        f"Generate an SEO title and meta description for '{topic}'. "
+        f"Generate an SEO title and meta description for '{title}'. "
         f"Use this as context: {description_hint[:200]} "
         "Respond in JSON format: {'title': '', 'description': ''}"
     )
@@ -71,29 +72,35 @@ def generate_meta(topic, article, description_hint=""):
         )
         raw = r.choices[0].message.content
         meta = json.loads(raw)
-        return meta.get("title", topic), meta.get("description", description_hint)
+        return meta.get("title", title), meta.get("description", description_hint)
     except Exception as e:
         logger.warning(f"[Meta] Failed JSON parse: {e}")
-        return topic, description_hint
+        return title, description_hint
 
 
 def build_post():
-    """Generate and post a complete article."""
+    """Generate and publish a complete article."""
     try:
         logger.info("=== AI AutoPublisher Started ===")
 
+        # Step 1: Generate and clean topic
         raw_topic = generate_topic()
         title, desc_hint = clean_topic(raw_topic)
 
-        article = generate_article(title)
+        # Step 2: Write a full article based on the title
+        article = generate_article(title, desc_hint)
+
+        # Step 3: Generate affiliate suggestions and links
         suggested = generate_product_suggestions(article)
         amazon_links = create_amazon_links(suggested)
         article_with_links = inject_affiliate_links(article, amazon_links)
 
+        # Step 4: Detect category, generate image, and SEO metadata
         category_id = detect_category(title)
         image_id = get_featured_image_id(title)
         seo_title, seo_desc = generate_meta(title, article_with_links, desc_hint)
 
+        # Step 5: Publish to WordPress
         post_id = post_to_wordpress(
             title=seo_title,
             content=article_with_links,
@@ -102,10 +109,11 @@ def build_post():
             excerpt=seo_desc,
         )
 
+        # Step 6: Refresh AIOSEO if possible
         if post_id:
             refresh_aioseo(post_id)
 
-        logger.info(f"[ai_script] ✅ Post completed: {seo_title}")
+        logger.info(f"[ai_script] ✅ Post completed successfully: {seo_title}")
 
     except Exception as e:
-        logger.error(f"Unexpected error: {e}")
+        logger.error(f"Unexpected error during post build: {e}")
