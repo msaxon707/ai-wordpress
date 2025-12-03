@@ -5,7 +5,7 @@ import requests
 from openai import OpenAI
 from config import OPENAI_API_KEY
 from logger_setup import setup_logger
-from wordpress_client import upload_image_to_wordpress
+from wordpress_client import upload_featured_image  # ✅ Fixed import name
 
 logger = setup_logger()
 client = OpenAI(api_key=OPENAI_API_KEY)
@@ -20,19 +20,31 @@ def get_featured_image_id(topic: str):
     try:
         prompt = f"Generate a realistic image that represents the topic: {topic}"
         logger.info(f"🎨 Generating featured image for: {topic}")
-        result = client.images.generate(model="gpt-image-1", prompt=prompt, size="1024x1024")
+
+        # ✅ Generate image via DALL·E or OpenAI Image API
+        result = client.images.generate(
+            model="gpt-image-1",
+            prompt=prompt,
+            size="1024x1024"
+        )
 
         image_base64 = result.data[0].b64_json
         image_bytes = base64.b64decode(image_base64)
 
+        # ✅ Safe filename generation
         safe_name = sanitize_filename(topic)[:80]
         filename = f"{safe_name}.png"
 
+        # Save image temporarily
         with open(filename, "wb") as f:
             f.write(image_bytes)
 
-        image_id = upload_image_to_wordpress(filename)
-        os.remove(filename)
+        # ✅ Upload to WordPress via our client
+        image_id = upload_featured_image(image_bytes, filename)
+
+        # Clean up temp file
+        if os.path.exists(filename):
+            os.remove(filename)
 
         if image_id:
             logger.info(f"🖼️ Uploaded featured image for '{topic}' (ID: {image_id})")
