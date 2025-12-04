@@ -1,28 +1,33 @@
 import time
-import argparse
-from topic_generator import generate_topic
+import random
 from ai_script import build_post
-from config import POST_INTERVAL_HOURS
 from logger_setup import setup_logger
 
 logger = setup_logger()
 
-def main(test_mode=False):
-    logger.info("=== AI AutoPublisher Started ===")
 
-    try:
-        topic = generate_topic()
-        logger.info(f"🧠 Topic Selected: {topic}")
-        build_post()
-    except Exception as e:
-        logger.error(f"Unexpected error: {e}")
-    finally:
-        if not test_mode:
-            logger.info(f"⏱️ Sleeping for {POST_INTERVAL_HOURS} hour(s) before next post...")
-            time.sleep(POST_INTERVAL_HOURS * 3600)
+def main():
+    logger.info("=== 🌾 AI AutoPublisher Started ===")
+    logger.info("This bot will automatically post articles every 45–75 minutes.")
+    logger.info("You can stop it anytime with CTRL + C.\n")
+
+    while True:
+        try:
+            logger.info("🧠 Starting new content generation cycle...")
+            build_post()
+            logger.info("✅ Post published successfully. Preparing for next cycle.")
+        except Exception as e:
+            logger.error(f"❌ Unexpected error in main loop: {e}")
+
+        # Random delay between 45 and 75 minutes
+        delay_minutes = random.randint(45, 75)
+        delay_seconds = delay_minutes * 60
+        logger.info(f"⏳ Sleeping for {delay_minutes} minutes before next post...")
+        time.sleep(delay_seconds)
+
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--test", action="store_true", help="Run one post and exit.")
-    args = parser.parse_args()
-    main(test_mode=args.test)
+    try:
+        main()
+    except KeyboardInterrupt:
+        logger.info("🛑 AI AutoPublisher stopped manually by user.")
