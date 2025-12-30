@@ -1,3 +1,9 @@
+
+import time
+_last_call_time = 0
+_min_interval = 5  # seconds between OpenAI calls
+_retry_limit = 3   # maximum retries before giving up
+
 import random
 import json
 from openai import OpenAI
